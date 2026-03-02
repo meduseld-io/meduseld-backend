@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <title>
+    {% block title %}{% endblock %} Meduseld
+  </title>
+
+
+  <!-- CoreUI CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/@coreui/coreui@5.0.0/dist/css/coreui.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@coreui/icons@3.0.0/css/all.min.css" rel="stylesheet">
+
+  <style>
+    body {
+      background: linear-gradient(rgba(10, 20, 12, 0.8), rgba(10, 20, 12, 0.8)),
+      url("{{ url_for('static', filename='bg.png') }}");
+
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+      background-repeat: no-repeat;
+
+      color: #e4d9b5;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .btn {
+      transition: transform 0.15s ease, box-shadow 0.2s ease;
+    }
+
+    .btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    .rohan-logo {
+      max-height: 120px;
+      opacity: 0.95;
+      display: block;
+
+      filter: drop-shadow(0 0 12px rgba(201, 162, 39, 0.6));
+
+      transition: filter 0.4s ease, transform 0.3s ease;
+    }
+
+    .rohan-logo-wrapper {
+      position: relative;
+      display: inline-block;
+    }
+
+    .rohan-logo-wrapper::before {
+      content: "";
+      position: absolute;
+      inset: -10px;
+      background: radial-gradient(circle,
+          rgba(201, 162, 39, 0.25) 0%,
+          rgba(201, 162, 39, 0.1) 40%,
+          transparent 70%);
+      filter: blur(20px);
+      z-index: -1;
+    }
+
+
+    .card {
+      background: rgba(20, 36, 26, 0.85) !important;
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(201, 162, 39, 0.4);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+      position: relative;
+    }
+
+    .rohan-logo:hover {
+      filter: drop-shadow(0 0 18px rgba(230, 198, 92, 0.9));
+      transform: scale(1.03);
+    }
+
+    .card-header {
+      background: rgba(20, 36, 26, 0.9) !important;
+      color: #e6c65c;
+      border-bottom: 1px solid rgba(201, 162, 39, 0.5);
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      box-shadow: inset 0 0 40px rgba(201, 162, 39, 0.08);
+      pointer-events: none;
+    }
+
+
+    .btn-success {
+      background-color: #c9a227 !important;
+      border-color: #c9a227 !important;
+      color: #0f1a14 !important;
+    }
+
+    .btn-danger {
+      background-color: #8b1e1e !important;
+      border-color: #8b1e1e !important;
+    }
+
+    .control-card {
+      cursor: pointer;
+      transition: all 0.25s ease;
+      border: 1px solid rgba(201, 162, 39, 0.3);
+      color: #e6c65c;
+    }
+
+    .control-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 0 20px rgba(201, 162, 39, 0.35);
+    }
+
+    /* Disabled state */
+    .control-card.disabled {
+      opacity: 0.35;
+      pointer-events: none;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    /* ACTIVE STATES */
+    .control-start {
+      background: #1f4d2b !important;
+      /* green */
+    }
+
+    .control-stop {
+      background: #6b1e1e !important;
+      /* red */
+    }
+
+    .control-restart {
+      background: #7a6516 !important;
+      /* gold */
+    }
+
+    .control-kill {
+      background: #3c1e6b !important;
+      /* royal purple */
+    }
+
+    /* Disabled */
+    .control-card.disabled {
+      opacity: 0.35;
+      pointer-events: none;
+      filter: grayscale(50%);
+    }
+
+    .btn-warning {
+      background-color: #e6c65c !important;
+      border-color: #e6c65c !important;
+      color: #0f1a14 !important;
+    }
+
+    .bg-success {
+      background-color: #c9a227 !important;
+      color: #0f1a14 !important;
+    }
+
+    .bg-danger {
+      background-color: #8b1e1e !important;
+    }
+
+    h4,
+    h5 {
+      color: #e6c65c;
+    }
+
+    .meduseld-footer {
+      position: relative;
+      color: #e6c65c;
+      font-size: 0.85rem;
+      letter-spacing: 1px;
+      opacity: 0.85;
+    }
+
+    .footer-divider {
+      width: 200px;
+      height: 2px;
+      margin: 0 auto 12px auto;
+      background: linear-gradient(to right,
+          transparent,
+          #c9a227,
+          #e6c65c,
+          #c9a227,
+          transparent);
+      box-shadow: 0 0 8px rgba(201, 162, 39, 0.4);
+    }
+
+    .footer-text {
+      color: #d4c28a;
+    }
+
+    .btn-dark {
+      background-color: #111 !important;
+      border-color: #aa0000 !important;
+      color: #e6c65c !important;
+    }
+
+    .btn-dark:hover {
+      background-color: #300000 !important;
+    }
+  </style>
+</head>
+
+<body class="d-flex flex-column min-vh-100">
+
+  <div class="container-fluid flex-grow-1 d-flex flex-column">
+    {% block content %}{% endblock %}
+  </div>
+
+  <footer class="meduseld-footer text-center mt-auto pt-4 pb-3">
+    <div class="footer-divider"></div>
+    <div class="footer-text">
+      © <span id="year"></span> Meduseld · All rights reserved
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@coreui/coreui@5.0.0/dist/js/coreui.bundle.min.js"></script>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
+
+</body>
+
+</html>

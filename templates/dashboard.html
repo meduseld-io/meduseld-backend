@@ -1,0 +1,566 @@
+{% extends "base.html" %}
+{% block title %}Control Panel |{% endblock %}
+{% block content %}
+  <!-- Back Button -->
+  <div class="container-fluid pt-3">
+    <a href="https://meduseld.io/menu" class="btn btn-warning btn-sm">
+      <i class="cil-arrow-left"></i> Back to Services
+    </a>
+  </div>
+  
+  <!-- Logo -->
+  <div class="d-flex justify-content-center mt-3 mb-3">
+    <a target="_blank" rel="noopener noreferrer" href="https://www.youtube.com/watch?v=7lwJOxN_gXc&t=48s"
+      class="rohan-logo-wrapper">
+      <img src="{{ url_for('static', filename='meduseldminimal.png') }}" class="rohan-logo">
+    </a>
+  </div>
+<div class="container-fluid py-4">
+  <!-- ===== SYSTEM STATUS ROW ===== -->
+  <div class="row g-4">
+
+    <!-- PC Status -->
+    <div class="col-md-3">
+      <div class="card text-white bg-dark">
+        <div class="card-body">
+          <h5 class="card-title">System Status</h5>
+          <h4 id="pc-status">Online</h4>
+        </div>
+      </div>
+    </div>
+
+    <!-- CPU -->
+    <div class="col-md-3">
+      <div class="card bg-dark text-white">
+        <div class="card-body">
+          <h5 class="card-title">System CPU</h5>
+          <h4 id="cpu-stat">--</h4>
+        </div>
+      </div>
+    </div>
+
+    <!-- RAM -->
+    <div class="col-md-3">
+      <div class="card bg-dark text-white">
+        <div class="card-body">
+          <h5 class="card-title">System RAM</h5>
+          <h4 id="ram-stat">--</h4>
+        </div>
+      </div>
+    </div>
+
+    <!-- Disk -->
+    <div class="col-md-3">
+      <div class="card bg-dark text-white">
+        <div class="card-body">
+          <h5 class="card-title">Disk Usage</h5>
+          <h4 id="disk-stat">--</h4>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ===== GAME SERVER CONTROL ROW ===== -->
+  <div class="row mt-4 g-4 align-items-stretch">
+
+    <!-- SERVER STATUS CARD (LEFT SIDE) -->
+    <div class="col-md-6">
+      <div class="card text-white h-100" id="server-status-card">
+        <div class="card-body d-flex flex-column justify-content-center text-center">
+          <h5 class="card-title">Icarus Server</h5>
+
+          <div id="health-badge" class="mb-2"></div>
+          <div id="update-badge" class="mb-2"></div>
+
+          <h3 id="server-status" class="mt-2">Loading...</h3>
+          <small id="uptime-stat" class="d-block mb-4"></small>
+
+          <hr style="border-color: rgba(201,162,39,0.3);">
+
+          <div class="row mt-3">
+            <div class="col-6">
+              <small>Server CPU Usage</small>
+              <h5 id="icarus-cpu-stat">--</h5>
+            </div>
+            <div class="col-6">
+              <small>Server RAM Usage</small>
+              <h5 id="icarus-ram-stat">--</h5>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BUTTON GRID (RIGHT SIDE) -->
+    <div class="col-md-6">
+      <div class="row g-4 h-100">
+
+        <div class="col-6">
+          <div class="card text-center h-100 control-card" onclick="action('/start')" id="start-card">
+            <div class="card-body d-flex flex-column justify-content-center">
+              <i class="cil-media-play fs-3 mb-2"></i>
+              <strong>Start</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6">
+          <div class="card text-center h-100 control-card" onclick="action('/stop')" id="stop-card">
+            <div class="card-body d-flex flex-column justify-content-center">
+              <i class="cil-media-stop fs-3 mb-2"></i>
+              <strong>Stop</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6">
+          <div class="card text-center h-100 control-card" onclick="action('/restart')" id="restart-card">
+            <div class="card-body d-flex flex-column justify-content-center">
+              <i class="cil-loop-circular fs-3 mb-2"></i>
+              <strong>Restart</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6">
+          <div class="card text-center h-100 control-card" onclick="action('/kill')" id="kill-card">
+            <div class="card-body d-flex flex-column justify-content-center">
+              <i class="cil-x fs-3 mb-2"></i>
+              <strong>Kill</strong>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+
+</div>
+
+
+<!-- ===== LOG PANEL ===== -->
+<div class="row mt-4">
+  <div class="col">
+    <div class="card bg-dark text-white">
+      <div class="card-header">Live Logs</div>
+      <div class="card-body" id="log-container" style="height:400px; overflow-y:scroll; font-family:monospace;">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== GRAPHS ===== -->
+<div class="row mt-4">
+  <div class="col-md-6">
+    <div class="card bg-dark text-white h-100">
+      <div class="card-header">CPU Usage</div>
+      <div class="card-body">
+        <canvas id="cpuChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card bg-dark text-white h-100">
+      <div class="card-header">RAM Usage</div>
+      <div class="card-body">
+        <canvas id="ramChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="d-flex justify-content-center mt-5 mb-3">
+  <a href="https://www.youtube.com/watch?v=WtO3AHMBePY" class="rohan-logo-wrapper">
+    <img src="{{ url_for('static', filename='logo.png') }}" class="rohan-logo">
+  </a>
+</div>
+
+<script>
+  let lastUptime = 0;
+  async function updateStats() {
+    try {
+      const res = await fetch("/api/stats");
+      const data = await res.json();
+
+      // 🔥 Dynamic tab title
+      if (data.state === "running") {
+        document.title = "🟢 Panel | Meduseld";
+      } else if (data.state === "crashed") {
+        document.title = "💥 CRASHED | Meduseld";
+      } else if (data.state === "restarting") {
+        document.title = "🟡 Restarting | Meduseld";
+      } else if (data.state === "starting") {
+        document.title = "🟡 Starting | Meduseld";
+      } else if (data.state === "stopping") {
+        document.title = "🟠 Stopping | Meduseld";
+      } else {
+        document.title = "🔴 Offline | Meduseld";
+      }
+
+      // System stats
+      document.getElementById("cpu-stat").innerText = data.stats.cpu + "%";
+      document.getElementById("ram-stat").innerText = data.stats.ram_percent + "%";
+      document.getElementById("disk-stat").innerText = data.stats.disk_percent + "%";
+
+      // Icarus stats
+      const icarusCpuEl = document.getElementById("icarus-cpu-stat");
+      const icarusRamEl = document.getElementById("icarus-ram-stat");
+
+      if (data.icarus && data.state === "running") {
+        icarusCpuEl.innerText = data.icarus.cpu_raw + "%";
+        icarusRamEl.innerText = data.icarus.ram + " GB";
+      } else {
+        icarusCpuEl.innerText = "--";
+        icarusRamEl.innerText = "--";
+      }
+
+
+      document.getElementById("uptime-stat").innerText =
+        formatUptime(data.uptime);
+      const pcStatus = document.getElementById("pc-status");
+
+      if (res.ok) {
+        pcStatus.innerText = "Online";
+        pcStatus.parentElement.parentElement.classList.remove("bg-danger");
+        pcStatus.parentElement.parentElement.classList.add("bg-success");
+      } else {
+        pcStatus.innerText = "Offline";
+        pcStatus.parentElement.parentElement.classList.remove("bg-success");
+        pcStatus.parentElement.parentElement.classList.add("bg-danger");
+      }
+
+
+      const healthBadge = document.getElementById("health-badge");
+
+      if (healthBadge) {
+        if (data.health === "good") {
+          healthBadge.innerHTML = `
+      <span class="badge rounded-pill px-3 py-2 bg-success">
+        ⚔ Health: Good
+      </span>`;
+        }
+
+        else if (data.health === "warning") {
+          healthBadge.innerHTML = `
+      <span class="badge rounded-pill px-3 py-2 bg-warning text-dark">
+        ⚠ Health: Warning
+      </span>`;
+        }
+
+        else {
+          healthBadge.innerHTML = `
+      <span class="badge rounded-pill px-3 py-2 bg-danger">
+        ☠ Health: Critical
+      </span>`;
+        }
+      }
+
+      // Update badge
+      const updateBadge = document.getElementById("update-badge");
+      if (updateBadge && data.version) {
+        if (data.version.update_available) {
+          updateBadge.innerHTML = `
+      <span class="badge rounded-pill px-3 py-2 bg-info text-dark">
+        🔄 Update Available
+      </span>`;
+        } else if (data.version.current && data.version.latest) {
+          updateBadge.innerHTML = `
+      <span class="badge rounded-pill px-3 py-2 bg-secondary">
+        ✓ Up to Date
+      </span>`;
+        } else {
+          updateBadge.innerHTML = "";
+        }
+      }
+
+
+      const uptimeEl = document.getElementById("uptime-stat");
+
+      // Status
+      const statusEl = document.getElementById("server-status");
+      const statusCard = statusEl.closest(".card");
+
+      statusCard.style.backgroundColor = "";
+
+      if (data.state === "running") {
+        statusEl.innerText = "Running";
+        statusCard.style.backgroundColor = "#1f4d2b";
+      }
+      else if (data.state === "offline") {
+        statusEl.innerText = "Offline";
+        statusCard.style.backgroundColor = "#6b1e1e";
+      }
+      else if (data.state === "crashed") {
+        statusEl.innerText = "⚠ CRASHED";
+        statusCard.style.backgroundColor = "#8b0000";
+      }
+      else {
+        statusEl.innerText =
+          data.state.charAt(0).toUpperCase() + data.state.slice(1) + "...";
+        statusCard.style.backgroundColor = "#7a6516";
+      }
+      updateButtonStates(data.state);
+    } catch (err) {
+      console.error(err);
+    }
+
+  }
+
+  function updateButtonStates(state) {
+
+    const startCard = document.getElementById("start-card");
+    const stopCard = document.getElementById("stop-card");
+    const restartCard = document.getElementById("restart-card");
+    const killCard = document.getElementById("kill-card");
+
+    const allCards = [startCard, stopCard, restartCard, killCard];
+
+    // Reset everything
+    allCards.forEach(card => {
+      if (!card) return;
+      card.classList.remove(
+        "disabled",
+        "control-start",
+        "control-stop",
+        "control-restart",
+        "control-kill"
+      );
+    });
+
+    if (state === "offline") {
+      startCard.classList.add("control-start");
+
+      stopCard.classList.add("disabled");
+      restartCard.classList.add("disabled");
+      killCard.classList.add("disabled");
+    }
+
+    else if (state === "running") {
+      stopCard.classList.add("control-stop");
+      restartCard.classList.add("control-restart");
+      killCard.classList.add("control-kill");
+
+      startCard.classList.add("disabled");
+    }
+
+    else if (state === "restarting") {
+      killCard.classList.add("control-kill");
+
+      startCard.classList.add("disabled");
+      stopCard.classList.add("disabled");
+      restartCard.classList.add("disabled");
+    }
+
+    else if (state === "starting" || state === "stopping") {
+      allCards.forEach(card => card.classList.add("disabled"));
+    }
+
+    else if (state === "crashed") {
+      startCard.classList.add("control-start");
+
+      stopCard.classList.add("disabled");
+      restartCard.classList.add("disabled");
+      killCard.classList.add("disabled");
+    }
+    // ===== SPINNER ICON =====
+
+    if (restartIcon) {
+      if (state === "restarting") {
+        restartIcon.className = "spinner-border spinner-border-sm me-2";
+      } else {
+        restartIcon.className = "cil-loop-circular me-2";
+      }
+    }
+  }
+
+
+  function formatUptime(seconds) {
+    if (!seconds || seconds <= 0) return "--";
+
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    let parts = [];
+
+    if (days > 0) parts.push(days + "d");
+    if (hours > 0) parts.push(hours + "h");
+    if (minutes > 0) parts.push(minutes + "m");
+
+    parts.push(secs + "s");
+
+    return parts.join(" ");
+  }
+
+  async function action(endpoint) {
+    try {
+      const res = await fetch(endpoint, { method: "POST" });
+
+      if (res.status === 429) {
+        const data = await res.json();
+        alert("Restart cooldown active. Try again in " + data.remaining + " seconds.");
+      }
+
+      updateStats();
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+
+  async function confirmKill() {
+    const confirmed = confirm("Force kill the server immediately? This may cause data loss.");
+
+    if (!confirmed) return;
+
+    await fetch("/kill", { method: "POST" });
+    updateStats();
+  }
+
+
+  async function updateLogs() {
+    const res = await fetch("/api/logs");
+    const data = await res.json();
+    const container = document.getElementById("log-container");
+
+    // Check if user is scrolled to bottom (within 50px threshold)
+    const isScrolledToBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 50;
+
+    if (data.logs.length === 1 && data.logs[0].startsWith("[INFO]")) {
+      container.innerHTML = `<span style="color:#e6c65c;">${data.logs[0]}</span>`;
+    } else {
+      container.innerHTML = data.logs.join("<br>");
+    }
+
+    // Only auto-scroll if user was already at the bottom
+    if (isScrolledToBottom) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }
+
+  updateStats();
+  updateLogs();
+  setInterval(updateStats, 5000);
+  setInterval(updateLogs, 5000);
+</script>
+
+<script>
+
+  // =====================
+  // CPU CHART
+  // =====================
+
+  const cpuCtx = document.getElementById('cpuChart').getContext('2d');
+
+  const cpuChart = new Chart(cpuCtx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        {
+          label: 'System CPU %',
+          data: [],
+          borderColor: '#c9a227',
+          backgroundColor: 'rgba(201,162,39,0.2)',
+          tension: 0.3
+        },
+        {
+          label: 'Server CPU %',
+          data: [],
+          borderColor: '#e6c65c',
+          backgroundColor: 'rgba(230,198,92,0.25)',
+          tension: 0.3
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true }
+      }
+    }
+  });
+
+
+  // =====================
+  // RAM CHART
+  // =====================
+
+  const ramCtx = document.getElementById('ramChart').getContext('2d');
+
+  const ramChart = new Chart(ramCtx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        {
+          label: 'System RAM (GB)',
+          data: [],
+          borderColor: '#2f5e3f',
+          backgroundColor: 'rgba(47,94,63,0.25)',
+          tension: 0.3
+        },
+        {
+          label: 'Server RAM (GB)',
+          data: [],
+          borderColor: '#4f8f63',
+          backgroundColor: 'rgba(79,143,99,0.3)',
+          tension: 0.3
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true }
+      }
+    }
+  });
+
+
+  // =====================
+  // LOAD HISTORY (30 MINUTES)
+  // =====================
+
+  async function loadHistory() {
+    try {
+      const res = await fetch("/api/history");
+      const data = await res.json();
+
+      cpuChart.data.labels = data.map(d => d.timestamp);
+      cpuChart.data.datasets[0].data = data.map(d => d.system_cpu);
+      cpuChart.data.datasets[1].data = data.map(d => d.icarus_cpu);
+      cpuChart.update();
+
+      ramChart.data.labels = data.map(d => d.timestamp);
+      ramChart.data.datasets[0].data = data.map(d => d.system_ram);
+      ramChart.data.datasets[1].data = data.map(d => d.icarus_ram);
+      ramChart.update();
+
+    } catch (err) {
+      console.error("History load failed:", err);
+    }
+  }
+
+  // Live uptime ticker (runs once)
+  setInterval(() => {
+    if (lastUptime > 0) {
+      lastUptime++;
+
+      const uptimeEl = document.getElementById("uptime-stat");
+      if (uptimeEl) {
+        uptimeEl.innerText = "Uptime: " + formatUptime(lastUptime);
+      }
+    }
+  }, 1000);
+  loadHistory();
+  setInterval(loadHistory, 30000);
+
+</script>
+
+{% endblock %}
