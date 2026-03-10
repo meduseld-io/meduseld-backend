@@ -24,12 +24,12 @@ Hey! This is our web control panel for the Icarus game server. You can start/sto
 
 ## How to Access
 
-1. Go to https://panel.meduseld.io or https://ssh.meduseld.io
-2. Cloudflare will ask for your email
-3. Check your email for the OTP code
-4. Enter the code and you're in!
+1. Go to https://menu.meduseld.io to see all available services
+2. Click on the service you want to access (Control Panel, SSH Terminal, Jellyfin)
+3. Authenticate with Discord via Cloudflare Access
+4. You're in!
 
-Your email needs to be added to the Cloudflare Access list. If you can't get in, ask Kyle to add you.
+Your Discord account needs to be in the allowed server. If you can't get in, ask Kyle to add you.
 
 ## Making Changes to the Code
 
@@ -325,6 +325,6 @@ Ask in the group chat or check the code - it's pretty straightforward. Most of t
 
 ## Version
 
-Current version: **0.1.0-alpha** (see CHANGELOG.md for details)
+Current version: **0.2.0-alpha** (see CHANGELOG.md for details)
 
 This is an alpha release - we're still testing everything!

@@ -1,28 +1,29 @@
 {% extends "base.html" %}
 {% block title %}Control Panel |{% endblock %}
 {% block content %}
-  <!-- Back Button and Dev Mode Badge -->
+  <!-- Back Button -->
   <div class="container-fluid pt-3">
     <div class="d-flex justify-content-between align-items-center">
       <div class="d-flex align-items-center gap-2">
         <a href="https://menu.meduseld.io" class="btn btn-warning btn-sm">
           <i class="cil-arrow-left"></i> Back to Services
         </a>
-        {% if dev_mode %}
-        <span class="badge bg-warning text-dark px-3 py-2" style="font-size: 0.9rem;">
-          <i class="cil-code"></i> DEV MODE
-        </span>
-        {% endif %}
+        <a href="https://ssh.meduseld.io" class="btn btn-dark btn-sm">
+          <i class="cil-terminal"></i> SSH Terminal
+        </a>
       </div>
     </div>
   </div>
   
-  <!-- Logo -->
-  <div class="d-flex justify-content-center mt-3 mb-3">
+  <!-- Logo and Dev Mode Badge -->
+  <div class="d-flex flex-column justify-content-center align-items-center mt-3 mb-3">
     <a target="_blank" rel="noopener noreferrer" href="https://www.youtube.com/watch?v=7lwJOxN_gXc&t=48s"
-      class="rohan-logo-wrapper">
+      class="rohan-logo-wrapper mb-3">
       <img src="{{ url_for('static', filename='meduseldminimal.png') }}" class="rohan-logo">
     </a>
+    <span id="dev-mode-badge" class="badge text-dark px-3 py-2" style="font-size: 0.85rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: 2px solid #5a67d8; display: {% if dev_mode %}inline-block{% else %}none{% endif %};">
+      <i class="cil-terminal"></i> DEVELOPMENT MODE
+    </span>
   </div>
 <div class="container-fluid py-4">
   <!-- ===== SYSTEM STATUS ROW ===== -->
@@ -43,7 +44,7 @@
       <div class="card bg-dark text-white">
         <div class="card-body">
           <h5 class="card-title">System CPU</h5>
-          <h4 id="cpu-stat">--</h4>
+          <h4 id="cpu-stat" title="Total CPU usage across all cores">--</h4>
         </div>
       </div>
     </div>
@@ -53,7 +54,7 @@
       <div class="card bg-dark text-white">
         <div class="card-body">
           <h5 class="card-title">System RAM</h5>
-          <h4 id="ram-stat">--</h4>
+          <h4 id="ram-stat" title="Total system memory used out of available">--</h4>
         </div>
       </div>
     </div>
@@ -63,7 +64,7 @@
       <div class="card bg-dark text-white">
         <div class="card-body">
           <h5 class="card-title">Disk Usage</h5>
-          <h4 id="disk-stat">--</h4>
+          <h4 id="disk-stat" title="Total disk space used across all mounted partitions">--</h4>
         </div>
       </div>
     </div>
@@ -83,19 +84,19 @@
           <div id="health-badge" class="mb-2"></div>
           <div id="update-badge" class="mb-2"></div>
 
-          <h3 id="server-status" class="mt-2">Loading...</h3>
-          <small id="uptime-stat" class="d-block mb-4"></small>
+          <h3 id="server-status" class="mt-2" title="Current state of the game server">Loading...</h3>
+          <small id="uptime-stat" class="d-block mb-4" title="How long the server has been running"></small>
 
           <hr style="border-color: rgba(201,162,39,0.3);">
 
           <div class="row mt-3">
             <div class="col-6">
               <small>Server CPU Usage</small>
-              <h5 id="icarus-cpu-stat">--</h5>
+              <h5 id="icarus-cpu-stat" title="Number of CPU cores the game server is using">--</h5>
             </div>
             <div class="col-6">
               <small>Server RAM Usage</small>
-              <h5 id="icarus-ram-stat">--</h5>
+              <h5 id="icarus-ram-stat" title="Memory used by the game server process">--</h5>
             </div>
           </div>
         </div>
@@ -189,10 +190,16 @@
 </div>
 
 <script>
+  // Check if we're in development mode (declare this first)
+  const urlParams = new URLSearchParams(window.location.search);
+  const isDevMode = urlParams.get('env') === 'development';
+  
   let lastUptime = 0;
   async function updateStats() {
     try {
-      const res = await fetch("/api/stats");
+      // Add dev mode parameter if active
+      const url = isDevMode ? "/api/stats?env=development" : "/api/stats";
+      const res = await fetch(url);
       const data = await res.json();
 
       // 🔥 Dynamic tab title
@@ -212,16 +219,18 @@
 
       // System stats
       document.getElementById("cpu-stat").innerText = data.stats.cpu + "%";
-      document.getElementById("ram-stat").innerText = data.stats.ram_percent + "%";
-      document.getElementById("disk-stat").innerText = data.stats.disk_percent + "%";
+      document.getElementById("ram-stat").innerText = data.stats.ram_used + " / " + data.stats.ram_total + " GB";
+      document.getElementById("disk-stat").innerText = data.stats.disk_used + " / " + data.stats.disk_total + " GB";
 
       // Icarus stats
       const icarusCpuEl = document.getElementById("icarus-cpu-stat");
       const icarusRamEl = document.getElementById("icarus-ram-stat");
 
       if (data.icarus && data.state === "running") {
-        icarusCpuEl.innerText = data.icarus.cpu_raw + "%";
-        icarusRamEl.innerText = data.icarus.ram + " GB";
+        // Calculate cores used (raw % / 100 = cores)
+        const coresUsed = (data.icarus.cpu_raw / 100).toFixed(1);
+        icarusCpuEl.innerText = coresUsed + " cores (" + data.icarus.cpu_raw + "%)";
+        icarusRamEl.innerText = data.icarus.ram + " / " + data.stats.ram_total + " GB";
       } else {
         icarusCpuEl.innerText = "--";
         icarusRamEl.innerText = "--";
@@ -248,21 +257,21 @@
       if (healthBadge) {
         if (data.health === "good") {
           healthBadge.innerHTML = `
-      <span class="badge rounded-pill px-3 py-2 bg-success">
+      <span class="badge rounded-pill px-3 py-2 bg-success" title="System resources are within normal limits">
         ⚔ Health: Good
       </span>`;
         }
 
         else if (data.health === "warning") {
           healthBadge.innerHTML = `
-      <span class="badge rounded-pill px-3 py-2 bg-warning text-dark">
+      <span class="badge rounded-pill px-3 py-2 bg-warning text-dark" title="CPU, RAM, or disk usage is approaching limits (80%+)">
         ⚠ Health: Warning
       </span>`;
         }
 
         else {
           healthBadge.innerHTML = `
-      <span class="badge rounded-pill px-3 py-2 bg-danger">
+      <span class="badge rounded-pill px-3 py-2 bg-danger" title="CPU, RAM, or disk usage is critically high (95%+)">
         ☠ Health: Critical
       </span>`;
         }
@@ -271,14 +280,19 @@
       // Update badge
       const updateBadge = document.getElementById("update-badge");
       if (updateBadge && data.version) {
+        const gameVersion = data.version.game_version ? `Game: ${data.version.game_version}` : '';
+        const buildInfo = data.version.current ? `Build: ${data.version.current}` : '';
+        const tooltipParts = [gameVersion, buildInfo].filter(p => p).join(' | ');
+        
         if (data.version.update_available) {
+          const updateTooltip = `Current Build: ${data.version.current || 'Unknown'} | Latest Build: ${data.version.latest || 'Unknown'}${gameVersion ? ' | ' + gameVersion : ''}`;
           updateBadge.innerHTML = `
-      <span class="badge rounded-pill px-3 py-2 bg-info text-dark">
+      <span class="badge rounded-pill px-3 py-2 bg-info text-dark" title="${updateTooltip}">
         🔄 Update Available
       </span>`;
         } else if (data.version.current && data.version.latest) {
           updateBadge.innerHTML = `
-      <span class="badge rounded-pill px-3 py-2 bg-secondary">
+      <span class="badge rounded-pill px-3 py-2 bg-secondary" title="${tooltipParts || 'Up to date'}">
         ✓ Up to Date
       </span>`;
         } else {
@@ -397,9 +411,19 @@
     return parts.join(" ");
   }
 
+  let pollInterval = 5000;
+  let pollIntervalId;
+
+  function startPolling() {
+    if (pollIntervalId) clearInterval(pollIntervalId);
+    pollIntervalId = setInterval(updateStats, pollInterval);
+  }
+
   async function action(endpoint) {
     try {
-      const res = await fetch(endpoint, { method: "POST" });
+      // Add dev mode parameter if active
+      const url = isDevMode ? `${endpoint}?env=development` : endpoint;
+      const res = await fetch(url, { method: "POST" });
 
       if (res.status === 429) {
         const data = await res.json();
@@ -408,7 +432,16 @@
         return;
       }
 
-      updateStats();
+      // Poll more frequently for 30 seconds after an action
+      pollInterval = 1000;
+      startPolling();
+      setTimeout(() => {
+        pollInterval = 5000;
+        startPolling();
+      }, 30000);
+
+      // Wait a moment for the backend to update state, then poll immediately
+      setTimeout(updateStats, 500);
     } catch (err) {
       console.error(err);
     }
@@ -424,20 +457,54 @@
     updateStats();
   }
 
+  // Track previous server state to detect transitions
+  let previousServerState = null;
 
   async function updateLogs() {
-    const res = await fetch("/api/logs");
+    // Add dev mode parameter if active
+    const url = isDevMode ? "/api/logs?env=development" : "/api/logs";
+    const res = await fetch(url);
     const data = await res.json();
     const container = document.getElementById("log-container");
 
     // Check if user is scrolled to bottom (within 50px threshold)
     const isScrolledToBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 50;
 
-    if (data.logs.length === 1 && data.logs[0].startsWith("[INFO]")) {
-      container.innerHTML = `<span style="color:#e6c65c;">${data.logs[0]}</span>`;
-    } else {
-      container.innerHTML = data.logs.join("<br>");
+    // Get current server state
+    const statsRes = await fetch(isDevMode ? "/api/stats?env=development" : "/api/stats");
+    const statsData = await statsRes.json();
+    const currentState = statsData.state;
+
+    // Check if state changed from/to running
+    let stateChanged = false;
+    if (previousServerState !== null && previousServerState !== currentState) {
+      if ((previousServerState === "running" && currentState !== "running") ||
+          (previousServerState !== "running" && currentState === "running")) {
+        stateChanged = true;
+      }
     }
+    previousServerState = currentState;
+
+    // Build log content
+    let logContent = '';
+    
+    // Add separator if state changed
+    if (stateChanged) {
+      const timestamp = new Date().toLocaleString();
+      logContent = `<div style="border-top: 2px solid #c9a227; margin: 10px 0; padding-top: 10px;">
+        <span style="color: #c9a227; font-weight: bold;">═══════════════════════════════════════════════════════</span><br>
+        <span style="color: #c9a227;">Server state changed at ${timestamp}</span><br>
+        <span style="color: #c9a227; font-weight: bold;">═══════════════════════════════════════════════════════</span>
+      </div>`;
+    }
+
+    if (data.logs.length === 1 && data.logs[0].startsWith("[INFO]")) {
+      logContent += `<span style="color:#e6c65c;">${data.logs[0]}</span>`;
+    } else {
+      logContent += data.logs.join("<br>");
+    }
+
+    container.innerHTML = logContent;
 
     // Only auto-scroll if user was already at the bottom
     if (isScrolledToBottom) {
@@ -447,8 +514,14 @@
 
   updateStats();
   updateLogs();
-  setInterval(updateStats, 5000);
+  startPolling();
   setInterval(updateLogs, 5000);
+
+  // Check for development mode URL parameter (already declared above)
+  if (isDevMode) {
+    document.getElementById('dev-mode-badge').style.display = 'inline-block';
+    document.title = '🔧 DEV | ' + document.title;
+  }
 </script>
 
 <script>

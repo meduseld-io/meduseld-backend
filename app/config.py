@@ -87,7 +87,7 @@ WARNING_DISK = 85  # percent
 CRITICAL_DISK = 95  # percent
 
 # ================= LOGGING =================
-LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+LOG_LEVEL = "DEBUG"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 LOG_FILE_PATH = "logs/webserver.log"
 LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 LOG_BACKUP_COUNT = 5
@@ -97,6 +97,9 @@ FLASK_HOST = "0.0.0.0"
 FLASK_PORT = 5001 if IS_DEV else 5000  # Use 5001 in dev to avoid macOS AirPlay conflict
 FLASK_DEBUG = IS_DEV  # Auto-enable debug in dev mode
 SECRET_KEY = "dev-secret-key-change-in-production" if IS_DEV else os.environ.get("FLASK_SECRET_KEY", "change-me-in-production")
+
+# ================= OIDC / AUTHENTICATION =================
+OIDC_WORKER_URL = os.environ.get("OIDC_WORKER_URL", "https://discord-oidc.404-41f.workers.dev/")
 
 # ================= DEVELOPMENT MODE SETUP =================
 if IS_DEV:

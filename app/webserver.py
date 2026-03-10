@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, abort
+from flask import Flask, g, render_template, request, jsonify, abort, make_response, redirect
 from werkzeug.middleware.proxy_fix import ProxyFix
 import subprocess
 import psutil
@@ -12,6 +12,7 @@ import sys
 from collections import deque
 from functools import wraps
 from datetime import datetime
+import jwt
 
 # Get the directory where this script is located
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -98,6 +99,9 @@ activity_log = deque(maxlen=100)  # Track user actions
 dev_server_running = False
 dev_server_start_time = 0
 
+# Session-based dev mode tracking (keyed by session ID or IP)
+session_dev_mode = {}
+
 # Rate limiting
 request_history = deque(maxlen=100)
 
@@ -116,7 +120,9 @@ ALLOWED_HOSTS = [
     "menu.meduseld.io",
     "panel.meduseld.io",
     "ssh.meduseld.io",
-    "terminal.meduseld.io"
+    "terminal.meduseld.io",
+    "jellyfin.meduseld.io",
+    "health.meduseld.io"
 ]
 
 # Valid state transitions
@@ -130,6 +136,13 @@ VALID_TRANSITIONS = {
 }
 
 # ================= UTILITIES =================
+
+def is_dev_mode():
+    """Check if current request is in development mode"""
+    try:
+        return IS_DEV or (request and request.args.get('env') == 'development')
+    except:
+        return IS_DEV
 
 def set_server_state(new_state, force=False):
     """Thread-safe state setter with validation"""
@@ -180,7 +193,7 @@ def rate_limit(f):
     """Rate limiting decorator"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        ip = request.remote_addr
+        ip = request.headers.get("CF-Connecting-IP", request.remote_addr)
         
         if not rate_limit_check(ip):
             logger.warning(f"Rate limit exceeded for {ip}")
@@ -193,7 +206,7 @@ def log_activity(action):
     """Log user activity"""
     global activity_log
     
-    ip = request.remote_addr
+    ip = request.headers.get("CF-Connecting-IP", request.remote_addr)
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     
     activity_log.append({
@@ -266,17 +279,37 @@ def is_running():
     """Check if server process is running"""
     global dev_server_running
     
+    # Always use dev_server_running if it's set (for URL-based dev mode)
+    if dev_server_running:
+        return True
+    
     if IS_DEV:
         # In dev mode, use fake state
         return dev_server_running
     
     try:
-        # Production: check by process name
-        for proc in psutil.process_iter(["name"]):
-            if proc.info["name"] and PROCESS_NAME in proc.info["name"]:
-                return True
+        # Production: check by process name and command line
+        for proc in psutil.process_iter(["name", "cmdline", "pid", "exe"]):
+            # For Wine processes, check the command line for the exe name
+            if proc.info["cmdline"]:
+                try:
+                    # cmdline is a list, convert each element to string and join
+                    cmdline_str = " ".join(str(arg) for arg in proc.info["cmdline"])
+                    
+                    # Skip tmux, xvfb-run, wine launcher processes - we want the actual game server
+                    if proc.info["name"] in ["tmux", "tmux: server", "xvfb-run", "sh", "bash", "wine", "wine64", "wineserver", "start.exe"]:
+                        continue
+                    
+                    if "IcarusServer-Win64-Shipping.exe" in cmdline_str:
+                        logger.debug(f"Found server by cmdline: PID {proc.info['pid']}, name: {proc.info['name']}, exe: {proc.info.get('exe', 'N/A')}")
+                        return True
+                except Exception as e:
+                    # Skip processes we can't access
+                    continue
+        
+        logger.debug("Server process not found")
     except Exception as e:
-        logger.error(f"Error checking if server is running: {e}")
+        logger.error(f"Error checking if server is running: {e}", exc_info=True)
     return False
 
 def launch_server():
@@ -326,12 +359,31 @@ def kill_server():
             dev_server_running = False
             logger.info("Dummy server 'killed' (simulated)")
         else:
-            # Production: Use taskkill on Windows or pkill on Linux
+            # Production: Kill the server process
             if os.name == 'nt':
                 subprocess.call(f'taskkill /IM "{PROCESS_NAME}" /F', shell=True)
             else:
-                subprocess.call(f'pkill -9 -f "{PROCESS_NAME}"', shell=True)
-            logger.info("Server kill command executed")
+                # On Linux, find and kill the Wine process running the server
+                killed = False
+                try:
+                    for proc in psutil.process_iter(["name", "cmdline", "pid"]):
+                        # Check if this is the Icarus server process
+                        if proc.info["cmdline"]:
+                            for arg in proc.info["cmdline"]:
+                                if arg and ("IcarusServer-Win64-Shipping.exe" in arg or "IcarusServer.exe" in arg):
+                                    logger.info(f"Killing process {proc.info['pid']}: {proc.info['name']}")
+                                    proc.kill()
+                                    killed = True
+                                    break
+                except Exception as e:
+                    logger.error(f"Error killing process via psutil: {e}")
+                
+                # Fallback to pkill if psutil didn't work
+                if not killed:
+                    subprocess.call(f'pkill -9 -f "IcarusServer-Win64-Shipping.exe"', shell=True)
+                    subprocess.call(f'pkill -9 -f "IcarusServer.exe"', shell=True)
+                
+                logger.info("Server kill command executed")
     except Exception as e:
         logger.error(f"Failed to kill server: {e}")
 
@@ -342,7 +394,27 @@ def get_system_stats():
     try:
         cpu = psutil.cpu_percent(interval=0.3)
         memory = psutil.virtual_memory()
+        
+        # Get disk usage for root filesystem
         disk = psutil.disk_usage("/")
+        
+        # Try to get total physical disk size by checking all partitions
+        total_disk_size = 0
+        used_disk_size = 0
+        try:
+            for partition in psutil.disk_partitions():
+                # Skip special filesystems
+                if partition.fstype and partition.fstype not in ['squashfs', 'tmpfs', 'devtmpfs']:
+                    try:
+                        usage = psutil.disk_usage(partition.mountpoint)
+                        total_disk_size += usage.total
+                        used_disk_size += usage.used
+                    except:
+                        pass
+        except:
+            # Fallback to root filesystem only
+            total_disk_size = disk.total
+            used_disk_size = disk.used
 
         return {
             "cpu": cpu,
@@ -350,6 +422,8 @@ def get_system_stats():
             "ram_used": round(memory.used / (1024**3), 2),
             "ram_total": round(memory.total / (1024**3), 2),
             "disk_percent": disk.percent,
+            "disk_used": round(used_disk_size / (1024**3), 2),
+            "disk_total": round(total_disk_size / (1024**3), 2),
         }
     except Exception as e:
         logger.error(f"Error getting system stats: {e}")
@@ -358,11 +432,18 @@ def get_system_stats():
             "ram_percent": 0,
             "ram_used": 0,
             "ram_total": 0,
-            "disk_percent": 0
+            "disk_percent": 0,
+            "disk_used": 0,
+            "disk_total": 0,
         }
+
+# Cache for Icarus process object to avoid repeated lookups
+_icarus_process_cache = {"pid": None, "process": None, "last_check": 0}
 
 def get_icarus_usage():
     """Get Icarus server resource usage"""
+    global _icarus_process_cache
+    
     try:
         if IS_DEV:
             # In dev mode, return fake stats for the dummy server
@@ -374,27 +455,77 @@ def get_icarus_usage():
             }
         else:
             # Production: get real process stats
-            for proc in psutil.process_iter(["name"]):
-                if proc.info["name"] and PROCESS_NAME in proc.info["name"]:
-                    try:
-                        p = psutil.Process(proc.pid)
-
-                        p.cpu_percent(None)
-                        time.sleep(0.2)
-
-                        cpu_raw = p.cpu_percent(None)
+            now = time.time()
+            
+            # Try to use cached process first
+            if _icarus_process_cache["pid"] and _icarus_process_cache["process"]:
+                try:
+                    p = _icarus_process_cache["process"]
+                    if p.is_running():
+                        cpu_raw = p.cpu_percent(interval=None)  # Non-blocking
+                        ram_gb = round(p.memory_info().rss / (1024**3), 2)
                         cpu_norm = round(cpu_raw / psutil.cpu_count(), 2)
-
+                        
+                        logger.debug(f"Using cached process {_icarus_process_cache['pid']}: CPU={cpu_raw}%, RAM={ram_gb}GB")
+                        
                         return {
                             "cpu": cpu_norm,
                             "cpu_raw": cpu_raw,
-                            "ram": round(p.memory_info().rss / (1024**3), 2)
+                            "ram": ram_gb
                         }
+                except Exception as e:
+                    # Cache invalid, clear it
+                    logger.debug(f"Cache invalid, clearing: {e}")
+                    _icarus_process_cache = {"pid": None, "process": None, "last_check": 0}
+            
+            # Find the process
+            logger.debug("Searching for Icarus process...")
+            for proc in psutil.process_iter(["name", "cmdline", "pid", "exe"]):
+                if proc.info["cmdline"]:
+                    try:
+                        cmdline_str = " ".join(str(arg) for arg in proc.info["cmdline"])
+                        
+                        # Debug: log processes that might be relevant
+                        if "icarus" in cmdline_str.lower() or "wine" in proc.info["name"].lower():
+                            logger.debug(f"Checking PID {proc.info['pid']}: {proc.info['name']} - {cmdline_str[:100]}")
+                        
+                        # Skip tmux, xvfb-run, wine launcher processes - we want the actual game server
+                        if proc.info["name"] in ["tmux", "tmux: server", "xvfb-run", "sh", "bash", "wine", "wine64", "wineserver", "start.exe"]:
+                            continue
+                        
+                        if "IcarusServer-Win64-Shipping.exe" in cmdline_str:
+                            logger.info(f"Found Icarus server process: PID {proc.info['pid']}, name: {proc.info['name']}, exe: {proc.info.get('exe', 'N/A')}")
+                            p = psutil.Process(proc.info['pid'])
+                            
+                            # Initialize CPU measurement (non-blocking)
+                            p.cpu_percent(interval=None)
+                            
+                            # Cache the process
+                            _icarus_process_cache = {
+                                "pid": proc.info['pid'],
+                                "process": p,
+                                "last_check": now
+                            }
+                            
+                            # Get RAM immediately
+                            ram_gb = round(p.memory_info().rss / (1024**3), 2)
+                            
+                            logger.info(f"Initialized stats for PID {proc.info['pid']}: RAM={ram_gb}GB (CPU will be available on next call)")
+                            
+                            return {
+                                "cpu": 0.0,  # Will be accurate on next call
+                                "cpu_raw": 0.0,
+                                "ram": ram_gb
+                            }
+                    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                        continue
                     except Exception as e:
-                        logger.error(f"Error getting process stats: {e}")
-                        return None
+                        logger.error(f"Error getting process stats for PID {proc.info.get('pid')}: {e}")
+                        continue
+            
+            logger.warning("Icarus server process not found in process list")
     except Exception as e:
-        logger.error(f"Error iterating processes: {e}")
+        logger.error(f"Error iterating processes: {e}", exc_info=True)
     return None
 
 def get_uptime():
@@ -408,11 +539,24 @@ def get_uptime():
         return 0
     
     try:
-        for proc in psutil.process_iter(["name", "create_time"]):
-            if proc.info["name"] and PROCESS_NAME in proc.info["name"]:
-                return int(time.time() - proc.info["create_time"])
+        for proc in psutil.process_iter(["name", "create_time", "cmdline", "pid", "exe"]):
+            # For Wine processes, check the command line
+            if proc.info["cmdline"]:
+                try:
+                    cmdline_str = " ".join(str(arg) for arg in proc.info["cmdline"])
+                    
+                    # Skip tmux, xvfb-run, wine launcher processes - we want the actual game server
+                    if proc.info["name"] in ["tmux", "tmux: server", "xvfb-run", "sh", "bash", "wine", "wine64", "wineserver", "start.exe"]:
+                        continue
+                    
+                    if "IcarusServer-Win64-Shipping.exe" in cmdline_str:
+                        uptime = int(time.time() - proc.info["create_time"])
+                        logger.debug(f"Server uptime: {uptime}s (PID {proc.info['pid']})")
+                        return uptime
+                except Exception as e:
+                    continue
     except Exception as e:
-        logger.error(f"Error getting uptime: {e}")
+        logger.error(f"Error getting uptime: {e}", exc_info=True)
     return 0
 
 def get_health(stats):
@@ -443,6 +587,46 @@ def detect_crash_signature(lines):
     return any(any(k in line for k in crash_keywords) for line in lines)
 
 # ================= VERSION TRACKING =================
+
+# Cache for game version from logs
+_game_version_cache = {"version": None, "last_check": 0}
+
+def get_game_version_from_logs():
+    """Extract game version from server logs and cache it"""
+    global _game_version_cache
+    
+    # Return cached version if available and server is running
+    if _game_version_cache["version"] and is_running():
+        return _game_version_cache["version"]
+    
+    # If server is not running, clear cache
+    if not is_running():
+        _game_version_cache = {"version": None, "last_check": 0}
+        return None
+    
+    try:
+        if not os.path.exists(LOG_FILE):
+            return None
+        
+        # Read the log file and search for version line
+        with open(LOG_FILE, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if "LogIcarusGameInstance:" in line and "Version:" in line:
+                    # Extract version using regex
+                    import re
+                    match = re.search(r'Version:\s+(.+?)\s+<====', line)
+                    if match:
+                        version = match.group(1).strip()
+                        _game_version_cache["version"] = version
+                        _game_version_cache["last_check"] = time.time()
+                        logger.info(f"Extracted game version from logs: {version}")
+                        return version
+        
+        logger.debug("Version string not found in logs")
+        return None
+    except Exception as e:
+        logger.error(f"Error extracting version from logs: {e}")
+        return None
 
 def get_current_build_id():
     """Read the locally stored build ID"""
@@ -554,7 +738,71 @@ def monitor_server():
 
 # ================= ROUTES =================
 
-@app.route("/")
+def jellyfin_proxy(path=""):
+    """Proxy requests to Jellyfin server"""
+    from flask import Response
+    
+    try:
+        # Always proxy to the Jellyfin server with the exact path
+        jellyfin_url = f"http://71.191.152.254:8096/{path}"
+        
+        # Forward query parameters
+        if request.query_string:
+            jellyfin_url += f"?{request.query_string.decode()}"
+        
+        # Prepare headers - remove accept-encoding to prevent compression issues
+        headers = {}
+        for key, value in request.headers:
+            if key.lower() not in ['host', 'connection', 'accept-encoding']:
+                headers[key] = value
+        
+        # Make request to Jellyfin
+        resp = requests.request(
+            method=request.method,
+            url=jellyfin_url,
+            headers=headers,
+            data=request.get_data(),
+            cookies=request.cookies,
+            allow_redirects=False,
+            timeout=30
+        )
+        
+        # Prepare response headers and rewrite Location header
+        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
+        response_headers = []
+        
+        for name, value in resp.headers.items():
+            if name.lower() not in excluded_headers:
+                # Rewrite Location header to use proxy domain
+                if name.lower() == 'location':
+                    value = value.replace('http://71.191.152.254:8096', 'https://jellyfin.meduseld.io')
+                response_headers.append((name, value))
+        
+        # Rewrite content for HTML/JS/JSON responses
+        content = resp.content
+        content_type = resp.headers.get('content-type', '').lower()
+        
+        if any(ct in content_type for ct in ['text/html', 'application/javascript', 'application/json', 'text/javascript']):
+            try:
+                text_content = content.decode('utf-8')
+                # Replace backend URL references
+                text_content = text_content.replace('http://71.191.152.254:8096', 'https://jellyfin.meduseld.io')
+                text_content = text_content.replace('71.191.152.254:8096', 'jellyfin.meduseld.io')
+                content = text_content.encode('utf-8')
+            except Exception as e:
+                logger.warning(f"Could not rewrite content: {e}")
+        
+        # Return proxied response
+        return Response(content, resp.status_code, response_headers)
+        
+    except requests.Timeout:
+        logger.error("Jellyfin proxy timeout")
+        return "Jellyfin server timeout", 504
+    except Exception as e:
+        logger.error(f"Error proxying to Jellyfin: {e}")
+        return f"Jellyfin unavailable: {e}", 503
+
+@app.route("/", methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'])
 def home():
     """Route based on hostname"""
     host = request.host.split(":")[0]
@@ -562,6 +810,17 @@ def home():
     # If accessed via ssh subdomain, show terminal wrapper
     if host == "ssh.meduseld.io":
         return render_template("terminal.html")
+    
+    # If accessed via jellyfin subdomain, proxy to Jellyfin
+    if host == "jellyfin.meduseld.io":
+        return jellyfin_proxy("")
+    
+    # If accessed via health subdomain, show health dashboard
+    if host == "health.meduseld.io":
+        return render_template("health.html")
+    
+    # Check if dev mode is enabled via URL parameter
+    dev_mode_active = is_dev_mode()
     
     # Otherwise show the Icarus control panel
     running = is_running()
@@ -575,7 +834,7 @@ def home():
         stats=stats,
         icarus_stats=icarus_stats,
         logs=logs,
-        dev_mode=IS_DEV
+        dev_mode=IS_DEV or dev_mode_active
     )
 
 @app.route("/terminal")
@@ -594,6 +853,9 @@ def terminal_proxy():
 def start():
     log_activity("START server")
     
+    # Check if dev mode via URL parameter
+    dev_mode_active = is_dev_mode()
+    
     current_state = get_server_state()
     
     if current_state in ["running", "starting", "restarting"]:
@@ -601,6 +863,15 @@ def start():
     
     if not set_server_state("starting"):
         return jsonify({"error": "Invalid state transition"}), 400
+    
+    if dev_mode_active:
+        # Dev mode: use dummy server
+        global dev_server_running, dev_server_start_time
+        dev_server_running = True
+        dev_server_start_time = time.time()
+        set_server_state("running")
+        logger.info("Dummy server 'started' (simulated via URL parameter)")
+        return "", 204
     
     launch_server()
 
@@ -623,6 +894,8 @@ def start():
 def stop():
     log_activity("STOP server")
     
+    dev_mode_active = is_dev_mode()
+    
     current_state = get_server_state()
     
     if current_state in ["offline", "stopping"]:
@@ -630,6 +903,14 @@ def stop():
     
     if not set_server_state("stopping"):
         return jsonify({"error": "Invalid state transition"}), 400
+    
+    if dev_mode_active:
+        # Dev mode: stop dummy server
+        global dev_server_running
+        dev_server_running = False
+        set_server_state("offline")
+        logger.info("Dummy server 'stopped' (simulated via URL parameter)")
+        return "", 204
     
     kill_server()
 
@@ -739,15 +1020,20 @@ def restart():
         launch_server()
         
         # Wait for it to start
-        for _ in range(START_TIMEOUT):
+        logger.info(f"Waiting up to {START_TIMEOUT} seconds for server to start...")
+        for i in range(START_TIMEOUT):
             time.sleep(1)
-            if is_running():
+            running = is_running()
+            if i % 5 == 0:  # Log every 5 seconds
+                logger.info(f"Waiting for server... ({i}/{START_TIMEOUT}s) - Running: {running}")
+            if running:
                 set_server_state("running")
-                logger.info("Server started successfully after restart")
+                logger.info(f"Server started successfully after restart (took {i+1} seconds)")
                 return
         
         # If it never started, set to offline
-        logger.error("Server failed to start after restart")
+        logger.error(f"Server failed to start after restart (timeout after {START_TIMEOUT} seconds)")
+        logger.error(f"Final check - is_running(): {is_running()}")
         set_server_state("offline")
 
     threading.Thread(target=restart_sequence, daemon=True).start()
@@ -825,9 +1111,48 @@ def api_console():
 @app.route("/api/stats")
 def api_stats():
     try:
+        dev_mode_active = is_dev_mode()
+        
+        if dev_mode_active:
+            # Return dummy stats for dev mode
+            import random
+            global dev_server_running
+            
+            current_state = get_server_state()
+            running = dev_server_running
+            
+            return jsonify({
+                "state": current_state,
+                "stats": {
+                    "cpu": round(random.uniform(10, 30), 1),
+                    "ram_percent": round(random.uniform(40, 60), 1),
+                    "ram_used": round(random.uniform(16, 24), 1),
+                    "ram_total": 32.0,
+                    "disk_percent": round(random.uniform(50, 70), 1)
+                },
+                "icarus": {
+                    "cpu": round(random.uniform(5, 15), 2),
+                    "cpu_raw": round(random.uniform(20, 60), 2),
+                    "ram": round(random.uniform(2.5, 4.5), 2)
+                } if running else None,
+                "uptime": int(time.time() - dev_server_start_time) if running and dev_server_start_time > 0 else 0,
+                "health": "good",
+                "last_update": None,
+                "version": {
+                    "current": "15000000",
+                    "latest": "15000000",
+                    "update_available": False
+                },
+                "thread_health": thread_health
+            })
+        
+        # Production mode
         stats = get_system_stats()
         running = is_running()
         current_state = get_server_state()
+        
+        # Get game version from logs if server is running
+        game_version = get_game_version_from_logs() if running else None
 
         return jsonify({
             "state": current_state,
@@ -842,7 +1167,8 @@ def api_stats():
             "version": {
                 "current": current_build_id,
                 "latest": latest_build_id,
-                "update_available": current_build_id != latest_build_id if (current_build_id and latest_build_id) else None
+                "update_available": current_build_id != latest_build_id if (current_build_id and latest_build_id) else None,
+                "game_version": game_version
             },
             "thread_health": thread_health
         })
@@ -879,6 +1205,27 @@ def api_update_output():
 
 @app.route("/api/logs")
 def api_logs():
+    dev_mode_active = is_dev_mode()
+    
+    if dev_mode_active:
+        # Return dummy logs for dev mode
+        from datetime import datetime
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        dummy_logs = [
+            f"[{now}] [DEV MODE] This is a simulated log view",
+            f"[{now}] [DEV MODE] No real server processes are running",
+            f"[{now}] LogInit: Display: Running engine for game: Icarus (SIMULATED)",
+            f"[{now}] LogNet: Display: Game Engine Initialized (SIMULATED)",
+            f"[{now}] LogWorld: Display: Bringing World /Game/Maps/DedicatedServer up for play (SIMULATED)",
+            f"[{now}] LogNet: Display: Server is listening on port 17777 (SIMULATED)",
+            f"[{now}] LogOnline: Display: STEAM: Server logged in successfully (SIMULATED)",
+            f"[{now}] LogLoad: Display: Game class is 'IcarusGameMode' (SIMULATED)",
+            f"[{now}] LogNet: Display: Server ready for connections (SIMULATED)",
+            f"[{now}] [DEV MODE] All server operations are simulated in development mode"
+        ]
+        return jsonify({"logs": dummy_logs})
+    
+    # Production mode - read real logs
     logs = read_log()
 
     if logs:
@@ -899,6 +1246,77 @@ def api_history():
 def api_activity():
     """Get recent user activity log"""
     return jsonify(list(activity_log))
+
+# ================= HEALTH CHECK ENDPOINT =================
+
+@app.route("/health-check-b8f3a9c2")
+def health_check_bypass():
+    """
+    Simple health check endpoint for Cloudflare Worker monitoring.
+    This endpoint should be configured with a Bypass policy in Cloudflare Access.
+    Returns 200 if the Flask app is reachable.
+    """
+    return jsonify({"status": "ok"}), 200
+
+@app.route("/health")
+def health_check_public():
+    """
+    Public health check endpoint that doesn't require authentication.
+    Can be accessed by monitoring services.
+    """
+    return jsonify({"status": "ok"}), 200
+
+@app.route("/check/<service>")
+def check_service(service):
+    """
+    Health check endpoint for specific services on health.meduseld.io
+    Checks if the target service is reachable
+    """
+    host = request.host.split(":")[0]
+    
+    # Only allow from health subdomain
+    if host != "health.meduseld.io":
+        abort(404)
+    
+    # Map service names to their URLs
+    service_urls = {
+        'panel': 'https://panel.meduseld.io/health-check-b8f3a9c2',
+        'ssh': 'https://ssh.meduseld.io/health-check-b8f3a9c2',
+        'jellyfin': 'https://jellyfin.meduseld.io/health-check-b8f3a9c2'
+    }
+    
+    if service not in service_urls:
+        return jsonify({"status": "error", "message": "Unknown service"}), 404
+    
+    try:
+        # Try to reach the service
+        response = requests.get(service_urls[service], timeout=5)
+        if response.status_code == 200:
+            return jsonify({"status": "ok"}), 200
+        else:
+            return jsonify({"status": "error", "code": response.status_code}), 502
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 502
+
+# ================= JELLYFIN PROXY =================
+
+@app.route("/<path:path>", methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'])
+def jellyfin_catch_all(path):
+    """Catch-all for Jellyfin subdomain paths"""
+    host = request.host.split(":")[0]
+    
+    # Only proxy if on jellyfin subdomain
+    if host == "jellyfin.meduseld.io":
+        return jellyfin_proxy(path)
+    
+    # For other subdomains, redirect to home
+    if host in ["panel.meduseld.io", "ssh.meduseld.io", "health.meduseld.io"]:
+        return redirect("/")
+    
+    # Otherwise 404
+    abort(404)
+
+
 
 # ================= BACKGROUND THREADS =================
 

@@ -2,6 +2,56 @@
 
 All notable changes to the Meduseld Server Control Panel project.
 
+## [0.2.0-alpha] - 2026-03-10
+
+### Major Updates
+
+#### Authentication & Security
+- **Discord SSO Integration**: Replaced email OTP with Discord authentication via custom OIDC worker
+- **Cloudflare Access**: Configured with Discord as identity provider
+- **CORS Support**: Added proper CORS headers for cross-origin requests with credential support
+- **Session Management**: Fixed cross-subdomain authentication issues
+
+#### New Services
+- **Menu Page** (menu.meduseld.io): Central hub for all services with status indicators
+- **Health Monitoring** (health.meduseld.io): Dedicated health check system with Cloudflare Worker
+- **Jellyfin Integration** (jellyfin.meduseld.io): Media streaming proxy through Flask app
+- **User Profiles**: Discord-based user profile system with authentication state
+
+#### Health & Monitoring
+- Implemented health check worker to monitor all services
+- Added `/health-check-b8f3a9c2` endpoint with Cloudflare Access bypass
+- Created `/check/<service>` endpoints for service-specific health checks
+- Real-time service status on menu page (online/offline/tunnel down)
+- Health check API at meduseld-health.404-41f.workers.dev
+
+#### UI/UX Improvements
+- Added SSH Terminal button to control panel
+- Improved stat displays: CPU shown as cores used, RAM/disk shown as GB used/total
+- Added detailed tooltips to all metrics and badges
+- Visual log separators when server state changes
+- Better cursor handling (pointer for buttons, text for logs, default elsewhere)
+- Enhanced process detection to skip wrapper processes (tmux, wine, xvfb)
+
+#### Bug Fixes
+- Fixed panel.meduseld.io routing and 404 errors
+- Fixed catch-all route to properly handle non-Jellyfin subdomains
+- Resolved Cloudflare Access redirect loops
+- Fixed server process detection for Wine-wrapped executables
+- Improved disk usage calculation to sum all mounted partitions
+- Fixed development mode detection and banner display
+
+#### API & Endpoints
+- Added `/me` endpoint for authentication status
+- Added `/api/auth/profile` endpoint with CORS support
+- Added OPTIONS handlers for preflight requests
+- Improved error handling and logging
+
+#### Configuration
+- Added health.meduseld.io to allowed hosts
+- Updated Cloudflare Tunnel config for all subdomains
+- Configured Discord OIDC worker with environment variables
+
 ## [0.1.0-alpha] - 2026-03-09
 
 ### Alpha Release - Testing Phase

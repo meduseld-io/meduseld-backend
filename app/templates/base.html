@@ -29,6 +29,21 @@
       flex-direction: column;
       min-height: 100vh;
     }
+    
+    /* Default cursor for everything */
+    * {
+      cursor: default !important;
+    }
+    
+    /* Text cursor only for logs */
+    #log-container, #log-container * {
+      cursor: text !important;
+    }
+    
+    /* Pointer cursor for interactive elements */
+    button, a, .btn, input[type="button"], input[type="submit"], .control-card {
+      cursor: pointer !important;
+    }
 
     .btn {
       transition: transform 0.15s ease, box-shadow 0.2s ease;
