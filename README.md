@@ -9,6 +9,7 @@ Hey! This is our web control panel for the Icarus game server. You can start/sto
 ## What You Can Do
 
 ### Control Panel (https://panel.meduseld.io)
+
 - **Start/Stop/Restart** the Icarus server
 - **Monitor** CPU, RAM, disk usage in real-time
 - **View live logs** from the game server
@@ -17,6 +18,7 @@ Hey! This is our web control panel for the Icarus game server. You can start/sto
 - **Force kill** if the server gets stuck
 
 ### SSH Terminal (https://ssh.meduseld.io)
+
 - **Access the server** directly from your browser
 - No need to install PuTTY or any SSH client
 - Login with your Ubuntu username and password
@@ -36,20 +38,30 @@ Your Discord account needs to be in the allowed server. If you can't get in, ask
 If you want to modify the panel or fix something:
 
 ### 1. Clone the Repo
+
 ```bash
 git clone <repo-url>
 cd meduseld
 ```
 
-### 2. Make Your Changes
+### 2. Create a New Branch
+
+```bash
+git checkout -b feature/your-feature-name
+```
+
+### 3. Make Your Changes
+
 Edit files in the `app/` folder:
+
 - `app/webserver.py` - Main Flask application
 - `app/config.py` - Configuration settings
 - `app/templates/panel.html` - Control panel HTML
 - `app/templates/terminal.html` - SSH terminal wrapper
 - `app/static/css/style.css` - Styles
 
-### 3. Test Locally (Optional)
+### 4. Test Locally (Optional)
+
 ```bash
 python3 -m venv venv
 source venv/bin/activate
@@ -59,15 +71,25 @@ python app/webserver.py
 
 Visit http://localhost:5000 to test.
 
-### 4. Push Your Changes
+### 5. Commit and Push Your Branch
+
 ```bash
 git add .
 git commit -m "Description of what you changed"
-git push
+git push -u origin feature/your-feature-name
 ```
 
-### 5. Deploy to Server
+### 6. Open a Pull Request
+
+- Go to the GitHub repository
+- Click "Compare & pull request" for your branch
+- Add a description of your changes
+- Submit the PR for review
+
+### 7. Deploy to Server (After PR is Merged)
+
 SSH into the server and pull the changes:
+
 ```bash
 ssh vertebra@meduseld.io
 cd ~/services/meduseld
@@ -82,23 +104,27 @@ That's it! Your changes are live.
 ### Main Files
 
 **app/webserver.py**
+
 - The Flask app that runs everything
 - Has routes for `/start`, `/stop`, `/restart`, `/kill`
 - API endpoints like `/api/stats`, `/api/logs`
 - Monitors the server process and collects metrics
 
 **app/config.py**
+
 - All the settings (server paths, timeouts, thresholds)
 - Auto-detects if running in dev or production mode
 - Change `SERVER_DIR` if the Icarus server moves
 
 **app/templates/panel.html**
+
 - The control panel UI
 - Uses Bootstrap for styling
 - Chart.js for the graphs
 - Updates every 5 seconds via JavaScript
 
 **app/templates/terminal.html**
+
 - Wrapper for the SSH terminal
 - Embeds ttyd (the terminal emulator)
 - Has navigation buttons to go back to menu
@@ -118,6 +144,7 @@ Monitors Icarus Server Process
 ```
 
 For SSH:
+
 ```
 Your Browser
     ↓
@@ -131,6 +158,7 @@ Ubuntu Server Shell
 ### Key Concepts
 
 **Server States**
+
 - `offline` - Server not running
 - `starting` - Server is booting up
 - `running` - Server is online
@@ -147,26 +175,32 @@ Checks Steam's API for the latest build ID and compares it to what's installed. 
 ## Common Tasks
 
 ### Restarting the Panel
+
 If the panel itself is broken:
+
 ```bash
 ssh vertebra@meduseld.io
 sudo systemctl restart icarus-panel
 ```
 
 ### Viewing Panel Logs
+
 ```bash
 ssh vertebra@meduseld.io
 tail -f ~/services/meduseld/logs/webserver.log
 ```
 
 ### Restarting the SSH Terminal
+
 If the terminal isn't working:
+
 ```bash
 ssh vertebra@meduseld.io
 sudo systemctl restart ttyd
 ```
 
 ### Checking What's Running
+
 ```bash
 ssh vertebra@meduseld.io
 sudo systemctl status icarus-panel
@@ -175,7 +209,9 @@ sudo systemctl status cloudflared
 ```
 
 ### Manually Starting/Stopping Icarus
+
 If you need to bypass the panel:
+
 ```bash
 ssh vertebra@meduseld.io
 cd ~/games/icarus
@@ -186,30 +222,39 @@ pkill -9 IcarusServer   # Stop server
 ## Troubleshooting
 
 ### "Server shows offline but I know it's running"
+
 The process name might have changed. Check:
+
 ```bash
 ps aux | grep -i icarus
 ```
+
 If the process name is different, update `PROCESS_NAME` in `app/config.py`.
 
 ### "Graphs aren't showing data"
+
 The stats collection thread might have crashed. Restart the panel:
+
 ```bash
 sudo systemctl restart icarus-panel
 ```
 
 ### "SSH terminal shows blank page"
+
 1. Check if ttyd is running: `sudo systemctl status ttyd`
 2. Check if terminal.meduseld.io is in Cloudflare Access
 3. Restart ttyd: `sudo systemctl restart ttyd`
 
 ### "Can't access the site at all"
+
 1. Check if Cloudflare Tunnel is running: `sudo systemctl status cloudflared`
 2. Check if your email is in the Access list
 3. Try incognito mode (clear cookies)
 
 ### "Changes I pushed aren't showing up"
+
 Did you restart the panel after pulling?
+
 ```bash
 cd ~/services/meduseld
 git pull
@@ -221,6 +266,7 @@ sudo systemctl restart icarus-panel
 If you want to script things or integrate with other tools:
 
 ### Control the Server
+
 ```bash
 # Start
 curl -X POST https://panel.meduseld.io/start
@@ -236,6 +282,7 @@ curl -X POST https://panel.meduseld.io/kill
 ```
 
 ### Get Stats
+
 ```bash
 # Current stats
 curl https://panel.meduseld.io/api/stats | jq
@@ -251,6 +298,7 @@ curl https://panel.meduseld.io/api/check-update | jq
 ```
 
 Example response from `/api/stats`:
+
 ```json
 {
   "state": "running",
