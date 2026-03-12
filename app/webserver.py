@@ -81,7 +81,7 @@ except ImportError as e:
     FLASK_HOST = "0.0.0.0"
     FLASK_PORT = 5000
     FLASK_DEBUG = False
-    SECRET_KEY = "change-me-in-production"
+    ev = "change-me-in-production"
 
 # Set Flask secret key for sessions (required for OAuth)
 app.secret_key = SECRET_KEY
