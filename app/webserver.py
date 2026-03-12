@@ -70,6 +70,10 @@ except ImportError as e:
     FLASK_HOST = "0.0.0.0"
     FLASK_PORT = 5000
     FLASK_DEBUG = False
+    SECRET_KEY = "change-me-in-production"
+
+# Set Flask secret key for sessions (required for OAuth)
+app.secret_key = SECRET_KEY
 
 # ================= LOGGING =================
 
@@ -479,6 +483,40 @@ def kill_server():
 # ================= SYSTEM STATS =================
 
 
+def get_cpu_temperature():
+    """Get CPU temperature in Celsius"""
+    try:
+        # Try psutil first (works on many systems)
+        if hasattr(psutil, "sensors_temperatures"):
+            temps = psutil.sensors_temperatures()
+            if temps:
+                # Try common sensor names
+                for name in ["coretemp", "cpu_thermal", "k10temp", "zenpower"]:
+                    if name in temps:
+                        entries = temps[name]
+                        if entries:
+                            # Return the first temperature reading
+                            return round(entries[0].current, 1)
+        
+        # Fallback: read from /sys/class/thermal (Linux)
+        thermal_zones = [
+            "/sys/class/thermal/thermal_zone0/temp",
+            "/sys/class/thermal/thermal_zone1/temp",
+        ]
+        
+        for zone in thermal_zones:
+            if os.path.exists(zone):
+                with open(zone, "r") as f:
+                    temp = int(f.read().strip())
+                    # Temperature is in millidegrees, convert to Celsius
+                    return round(temp / 1000.0, 1)
+        
+        return None
+    except Exception as e:
+        logger.debug(f"Could not read CPU temperature: {e}")
+        return None
+
+
 def get_system_stats():
     """Get system resource usage"""
     try:
@@ -506,8 +544,12 @@ def get_system_stats():
             total_disk_size = disk.total
             used_disk_size = disk.used
 
+        # Get CPU temperature
+        cpu_temp = get_cpu_temperature()
+
         return {
             "cpu": cpu,
+            "cpu_temp": cpu_temp,
             "ram_percent": memory.percent,
             "ram_used": round(memory.used / (1024**3), 2),
             "ram_total": round(memory.total / (1024**3), 2),
@@ -519,6 +561,7 @@ def get_system_stats():
         logger.error(f"Error getting system stats: {e}")
         return {
             "cpu": 0,
+            "cpu_temp": None,
             "ram_percent": 0,
             "ram_used": 0,
             "ram_total": 0,
@@ -1404,6 +1447,7 @@ def api_stats():
                     "state": current_state,
                     "stats": {
                         "cpu": round(random.uniform(10, 30), 1),
+                        "cpu_temp": round(random.uniform(45, 65), 1),
                         "ram_percent": round(random.uniform(40, 60), 1),
                         "ram_used": round(random.uniform(16, 24), 1),
                         "ram_total": 32.0,
