@@ -75,7 +75,23 @@
       .control-card,
       .control-card *,
       div.control-card,
-      .card.control-card {
+      .card.control-card,
+      [onclick],
+      [data-bs-toggle],
+      [data-bs-target],
+      .badge[onclick],
+      .service-card,
+      [role='button'],
+      label[for],
+      select,
+      textarea,
+      input[type='text'],
+      input[type='email'],
+      input[type='password'],
+      input[type='search'],
+      input[type='number'],
+      input[type='checkbox'],
+      input[type='radio'] {
         cursor: pointer !important;
       }
 
@@ -261,6 +277,15 @@
       @media (max-width: 768px) {
         html {
           background-attachment: scroll;
+        }
+      }
+
+      @keyframes spin {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
         }
       }
     </style>

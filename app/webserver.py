@@ -89,8 +89,8 @@ except ImportError as e:
     CRITICAL_CPU = 95
     CRITICAL_RAM = 90
     CRITICAL_DISK = 95
-    LOG_FILE_PATH = "webserver.log"
-    SYSTEM_LOG_FILE_PATH = "webserver.log"
+    LOG_FILE_PATH = "/srv/meduseld/logs/webserver.log"
+    SYSTEM_LOG_FILE_PATH = "/var/log/syslog"
     LOG_LEVEL = "INFO"
     FLASK_HOST = "0.0.0.0"
     FLASK_PORT = 5000
@@ -101,6 +101,14 @@ except ImportError as e:
 app.secret_key = SECRET_KEY
 
 # ================= LOGGING =================
+
+# Ensure log directory exists
+log_dir = os.path.dirname(LOG_FILE_PATH)
+if log_dir and not os.path.exists(log_dir):
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+    except Exception as e:
+        print(f"Warning: Could not create log directory {log_dir}: {e}")
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
@@ -2057,13 +2065,28 @@ def api_server_logs():
     """Return recent server logs for display on service page"""
     try:
         lines = int(request.args.get("lines", 50))
-        lines = min(lines, 200)  # Cap at 200 lines
+        lines = min(lines, 500)  # Cap at 500 lines
 
+        # Try to read system log file
         if not os.path.exists(SYSTEM_LOG_FILE_PATH):
-            return jsonify({"logs": [], "error": "Log file not found"})
+            logger.warning(f"System log file not found: {SYSTEM_LOG_FILE_PATH}")
+            return jsonify(
+                {"logs": [], "error": "Log file not found", "path": SYSTEM_LOG_FILE_PATH}
+            )
+
+        # Check if file is readable
+        if not os.access(SYSTEM_LOG_FILE_PATH, os.R_OK):
+            logger.warning(f"System log file not readable: {SYSTEM_LOG_FILE_PATH}")
+            return jsonify(
+                {
+                    "logs": [],
+                    "error": "Log file not readable (permission denied)",
+                    "path": SYSTEM_LOG_FILE_PATH,
+                }
+            )
 
         # Read last N lines from log file
-        with open(SYSTEM_LOG_FILE_PATH, "r") as f:
+        with open(SYSTEM_LOG_FILE_PATH, "r", encoding="utf-8", errors="ignore") as f:
             all_lines = f.readlines()
             recent_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
 
@@ -2071,6 +2094,14 @@ def api_server_logs():
         logs = [line.rstrip("\n") for line in recent_lines]
 
         return jsonify({"logs": logs, "count": len(logs)})
+    except PermissionError as e:
+        logger.error(f"Permission denied reading system logs: {e}")
+        return (
+            jsonify(
+                {"logs": [], "error": "Permission denied - run with sudo or check file permissions"}
+            ),
+            403,
+        )
     except Exception as e:
         logger.error(f"Error reading server logs: {e}")
         return jsonify({"logs": [], "error": str(e)}), 500

@@ -252,6 +252,9 @@
   const isDevMode = urlParams.get('env') === 'development';
 
   let lastUptime = 0;
+  let isUpdating = false;
+  let previousUpdateAvailable = false;
+
   async function updateStats() {
     try {
       // Add dev mode parameter if active
@@ -372,13 +375,31 @@
         const buildInfo = data.version.current ? `Build: ${data.version.current}` : '';
         const tooltipParts = [gameVersion, buildInfo].filter((p) => p).join(' | ');
 
-        if (data.version.update_available) {
+        // Check if we just started updating
+        if (data.version.update_available && !previousUpdateAvailable && !isUpdating) {
+          previousUpdateAvailable = true;
+        }
+
+        // If we're in restarting state and previously had an update available, show updating
+        if (isUpdating || (data.state === 'restarting' && previousUpdateAvailable)) {
+          isUpdating = true;
+          updateBadge.innerHTML = `
+      <span class="badge rounded-pill px-3 py-2 text-white" style="background-color: #7a6516;" title="Update in progress...">
+        <i class="cil-reload" style="animation: spin 1s linear infinite;"></i> Updating...
+      </span>`;
+        } else if (data.version.update_available) {
           const updateTooltip = `Current Build: ${data.version.current || 'Unknown'} | Latest Build: ${data.version.latest || 'Unknown'}${gameVersion ? ' | ' + gameVersion : ''} | Click to update and restart`;
           updateBadge.innerHTML = `
-      <span class="badge rounded-pill px-3 py-2 text-white" style="background-color: #4a90e2; cursor: pointer;" title="${updateTooltip}" onclick="action('/restart')">
+      <span class="badge rounded-pill px-3 py-2 text-white" style="background-color: #4a90e2; cursor: pointer;" title="${updateTooltip}" onclick="startUpdate()">
         <i class="cil-cloud-download"></i> Update Available (Click to Update)
       </span>`;
+          previousUpdateAvailable = true;
         } else if (data.version.current && data.version.latest) {
+          // If we were updating and now no update is available, we successfully updated
+          if (isUpdating && data.state === 'running') {
+            isUpdating = false;
+            previousUpdateAvailable = false;
+          }
           updateBadge.innerHTML = `
       <span class="badge rounded-pill px-3 py-2 text-white" style="background-color: #1f4d2b;" title="${tooltipParts || 'Up to date'}">
         <i class="cil-check"></i> Up to Date
@@ -489,6 +510,23 @@
   function startPolling() {
     if (pollIntervalId) clearInterval(pollIntervalId);
     pollIntervalId = setInterval(updateStats, pollInterval);
+  }
+
+  async function startUpdate() {
+    // Set updating flag immediately
+    isUpdating = true;
+
+    // Update the badge immediately to show updating state
+    const updateBadge = document.getElementById('update-badge');
+    if (updateBadge) {
+      updateBadge.innerHTML = `
+      <span class="badge rounded-pill px-3 py-2 text-white" style="background-color: #7a6516;" title="Update in progress...">
+        <i class="cil-reload" style="animation: spin 1s linear infinite;"></i> Updating...
+      </span>`;
+    }
+
+    // Trigger the restart action
+    await action('/restart');
   }
 
   async function action(endpoint) {
