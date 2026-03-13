@@ -127,7 +127,7 @@ That's it! Your changes are live.
 
 - Wrapper for the SSH terminal
 - Embeds ttyd (the terminal emulator)
-- Has navigation buttons to go back to menu
+- Has navigation buttons to go back to service
 
 ### How It Works
 

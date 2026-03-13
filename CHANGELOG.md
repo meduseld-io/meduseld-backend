@@ -51,7 +51,7 @@ All notable changes to the Meduseld Server Control Panel project.
 - **Health Badge**: Color-coded text (Good=green, Warning=orange, Critical=red)
 - **Log Separators**: Color-coded separators in game server logs for version changes, restarts, stops
 
-#### Menu Page Updates
+#### service Page Updates
 
 - **VPN Access Card**: Added coming soon card for OpenVPN integration
 - **Game Prices**: Shows Steam prices with sale badges and discount percentages
@@ -84,7 +84,7 @@ All notable changes to the Meduseld Server Control Panel project.
 
 #### New Services
 
-- **Menu Page** (services.meduseld.io): Central hub for all services with status indicators
+- **service Page** (services.meduseld.io): Central hub for all services with status indicators
 - **Health Monitoring** (health.meduseld.io): Dedicated health check system with Cloudflare Worker
 - **Jellyfin Integration** (jellyfin.meduseld.io): Media streaming proxy through Flask app
 - **User Profiles**: Discord-based user profile system with authentication state
@@ -94,7 +94,7 @@ All notable changes to the Meduseld Server Control Panel project.
 - Implemented health check worker to monitor all services
 - Added `/health-check-b8f3a9c2` endpoint with Cloudflare Access bypass
 - Created `/check/<service>` endpoints for service-specific health checks
-- Real-time service status on menu page (online/offline/tunnel down)
+- Real-time service status on service page (online/offline/tunnel down)
 - Health check API at meduseld-health.404-41f.workers.dev
 
 #### UI/UX Improvements
@@ -173,7 +173,7 @@ All notable changes to the Meduseld Server Control Panel project.
 - Browser-based terminal access
 - Login authentication (username/password)
 - Full bash session with all commands
-- Navigation buttons to return to menu or panel
+- Navigation buttons to return to service or panel
 - Secure access through Cloudflare Tunnel
 
 #### Security

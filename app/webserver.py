@@ -1960,7 +1960,7 @@ def upload_to_drive():
 
 @app.route("/api/server-logs")
 def api_server_logs():
-    """Return recent server logs for display on menu page"""
+    """Return recent server logs for display on service page"""
     try:
         lines = int(request.args.get('lines', 50))
         lines = min(lines, 200)  # Cap at 200 lines
