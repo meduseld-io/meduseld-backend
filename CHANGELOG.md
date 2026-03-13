@@ -2,6 +2,27 @@
 
 All notable changes to the Meduseld Server Control Panel project.
 
+## [0.4.0-alpha] - 2026-03-13
+
+### Bug Fixes
+
+- **Fixed Panel Redirect Loop**: Resolved catch-all route causing panel.meduseld.io to redirect incorrectly on macOS browsers
+- **Fixed System Logs API**: Updated `/api/server-logs` endpoint with proper error handling and permission checks
+- **Fixed Log File Paths**: Changed to absolute paths for production environment (`/srv/meduseld/logs/webserver.log`)
+- **Fixed Mobile Web App Meta Tag**: Replaced deprecated `apple-mobile-web-app-capable` with standard `mobile-web-app-capable` in base template
+
+### Configuration Improvements
+
+- **Absolute Log Paths**: Production logs now use `/srv/meduseld/logs/webserver.log` and `/var/log/syslog` for system logs
+- **Log Directory Creation**: Automatically creates log directory if it doesn't exist on startup
+- **Better Error Messages**: Enhanced error reporting for log file access issues
+
+### Technical
+
+- **CORS Support**: Improved cross-origin headers for system monitoring endpoints
+- **Permission Handling**: Better detection and reporting of file permission issues
+- **Route Organization**: Cleaned up catch-all route logic to prevent conflicts
+
 ## [0.3.0-alpha] - 2026-03-11
 
 ### Server Stability & Diagnostics
