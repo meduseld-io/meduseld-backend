@@ -111,7 +111,7 @@ GOOGLE_CLIENT_ID = os.environ.get(
     "GOOGLE_CLIENT_ID", "282219108850-al0ddv2us3ovig0lg18lhae7m7ocemev.apps.googleusercontent.com"
 )
 GOOGLE_CLIENT_SECRET = os.environ.get(
-    "GOOGLE_CLIENT_SECRET", "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h"
+    "GOOGLE_CLIENT_SECRET", None
 )
 GOOGLE_REDIRECT_URI = "https://panel.meduseld.io/oauth2callback"
 GOOGLE_DRIVE_PARENT_FOLDER_ID = "10Q0jIUL64QG8jitw4INtTjE7oHH-aBeQ"  # Main backup folder
