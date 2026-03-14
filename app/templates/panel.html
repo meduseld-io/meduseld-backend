@@ -1,21 +1,19 @@
 {% extends "base.html" %} {% block title %}Control Panel |{% endblock %} {% block content %}
 <!-- Header Navigation -->
-<div class="container-fluid pt-3">
-  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-    <div class="d-flex align-items-center gap-2">
-      <a href="https://services.meduseld.io" class="btn btn-warning btn-sm">
-        <i class="bi bi-arrow-left"></i> Back to Services
-      </a>
-    </div>
-    <div class="d-flex align-items-center gap-2 flex-wrap">
+<div class="container-fluid pt-3 panel-nav">
+  <div class="d-flex justify-content-between align-items-center">
+    <a href="https://services.meduseld.io" class="btn btn-warning btn-sm">
+      <i class="bi bi-arrow-left"></i> Back to Services
+    </a>
+    <div class="d-flex align-items-center gap-2 panel-nav-buttons">
       <a href="https://ssh.meduseld.io" class="btn btn-dark btn-sm">
-        <i class="bi bi-terminal"></i> SSH Terminal
+        <i class="bi bi-terminal"></i> <span class="btn-label">SSH Terminal</span>
       </a>
       <a href="/download-backup" class="btn btn-success btn-sm" download>
-        <i class="bi bi-cloud-download"></i> Download Backup
+        <i class="bi bi-cloud-download"></i> <span class="btn-label">Download Backup</span>
       </a>
       <a href="/backup-to-cloud" class="btn btn-primary btn-sm">
-        <i class="bi bi-cloud-upload"></i> Backup Save to Cloud
+        <i class="bi bi-cloud-upload"></i> <span class="btn-label">Backup to Cloud</span>
       </a>
     </div>
   </div>
