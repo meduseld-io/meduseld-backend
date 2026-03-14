@@ -16,6 +16,9 @@
 # Built Visual Studio Code Extensions
 *.vsix
 
+### Node
+node_modules/
+
 ### Python template
 # Byte-compiled / optimized / DLL files
 __pycache__/

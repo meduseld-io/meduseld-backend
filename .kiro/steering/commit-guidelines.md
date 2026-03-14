@@ -57,8 +57,8 @@ chore(deps): update Flask to 3.0.0
 
 ## Rules
 
-1. **Subject line**: Max 100 characters, sentence case, no period at end
-2. **Scope**: Always include a scope (required by commitlint)
+1. **Subject line**: Max 100 characters, MUST be sentence-case (first letter capitalized, e.g. "Add feature" not "add feature"), no period at end
+2. **Scope**: Always include a scope from the list above (enforced by commitlint, warning if empty)
 3. **Body**: Optional, use for detailed explanations
 4. **Footer**: Optional, use for breaking changes or issue references
 
