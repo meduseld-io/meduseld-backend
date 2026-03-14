@@ -50,7 +50,7 @@ STEAM_APP_ID = "2089300"
 SERVER_ARGS = ["-SteamServerName=404localserver", "-Port=17777", "-QueryPort=27015", "-Log"]
 
 # ================= SECURITY =================
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "meduseld.io", "panel.meduseld.io", "ssh.meduseld.io"]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "meduseld.io", "panel.meduseld.io", "ssh.meduseld.io", "snowmane.meduseld.io"]
 
 # ================= RATE LIMITING =================
 RATE_LIMIT_WINDOW = 60  # seconds

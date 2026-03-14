@@ -159,6 +159,7 @@ ALLOWED_HOSTS = [
     "services.meduseld.io",
     "panel.meduseld.io",
     "ssh.meduseld.io",
+    "snowmane.meduseld.io",
     "terminal.meduseld.io",
     "jellyfin.meduseld.io",
     "health.meduseld.io",
