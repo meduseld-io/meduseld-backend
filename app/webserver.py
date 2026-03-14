@@ -138,6 +138,10 @@ activity_log = deque(maxlen=100)  # Track user actions
 dev_server_running = False
 dev_server_start_time = 0
 
+# Idle shutdown tracking
+IDLE_SHUTDOWN_MINUTES = 15
+idle_since = None  # Timestamp when server first had 0 players
+
 # Session-based dev mode tracking (keyed by session ID or IP)
 session_dev_mode = {}
 
@@ -999,7 +1003,7 @@ def check_for_updates():
 
 def monitor_server():
     """Monitor server state and detect crashes"""
-    global thread_health
+    global thread_health, idle_since
 
     logger.info("Monitor thread started")
     thread_health["monitor"]["alive"] = True
@@ -1056,6 +1060,38 @@ def monitor_server():
             elif current_state == "crashed" and running:
                 logger.info("Server recovered from crash")
                 set_server_state("running")
+
+            # Idle shutdown: stop server after 15 min with 0 players
+            if current_state == "running" and running:
+                player_count = get_player_count()
+                if player_count is not None and player_count == 0:
+                    if idle_since is None:
+                        idle_since = time.time()
+                        logger.info("Idle shutdown: Server has 0 players, starting idle timer")
+                    elif time.time() - idle_since >= IDLE_SHUTDOWN_MINUTES * 60:
+                        logger.warning(f"Idle shutdown: Server empty for {IDLE_SHUTDOWN_MINUTES} min, stopping")
+                        idle_since = None
+                        set_server_state("stopping")
+                        kill_server()
+                        # Wait for graceful stop, force kill if needed
+                        stopped = False
+                        for _ in range(STOP_TIMEOUT):
+                            time.sleep(1)
+                            if not is_running():
+                                stopped = True
+                                break
+                        if not stopped:
+                            logger.warning("Idle shutdown: Graceful stop failed, force killing")
+                            kill_server()
+                            time.sleep(5)
+                        set_server_state("offline")
+                        logger.info("Idle shutdown: Server stopped successfully")
+                else:
+                    if idle_since is not None:
+                        logger.info("Idle shutdown: Players detected, resetting idle timer")
+                    idle_since = None
+            else:
+                idle_since = None
 
         except Exception as e:
             logger.error(f"Error in monitor thread: {e}")
