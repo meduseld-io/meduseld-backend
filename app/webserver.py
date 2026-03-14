@@ -2067,44 +2067,38 @@ def upload_to_drive():
 
 @app.route("/api/server-logs")
 def api_server_logs():
-    """Return recent server logs for display on service page"""
+    """Return recent system logs for display on system page."""
     try:
         lines = int(request.args.get("lines", 50))
         lines = min(lines, 500)  # Cap at 500 lines
 
-        # Try to read system log file
-        if not os.path.exists(SYSTEM_LOG_FILE_PATH):
-            logger.warning(f"System log file not found: {SYSTEM_LOG_FILE_PATH}")
-            return jsonify(
-                {"logs": [], "error": "Log file not found", "path": SYSTEM_LOG_FILE_PATH}
+        # Try reading syslog file directly
+        if os.path.exists(SYSTEM_LOG_FILE_PATH) and os.access(SYSTEM_LOG_FILE_PATH, os.R_OK):
+            with open(SYSTEM_LOG_FILE_PATH, "r", encoding="utf-8", errors="ignore") as f:
+                all_lines = f.readlines()
+                recent_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
+            logs = [line.rstrip("\n") for line in recent_lines]
+            return jsonify({"logs": logs, "count": len(logs), "source": "syslog"})
+
+        # Syslog not readable, try journalctl instead
+        try:
+            result = subprocess.run(
+                ["journalctl", "--no-pager", "-n", str(lines)],
+                capture_output=True, text=True, timeout=10
             )
+            if result.returncode == 0 and result.stdout.strip():
+                logs = [line for line in result.stdout.strip().split("\n")]
+                return jsonify({"logs": logs, "count": len(logs), "source": "journalctl"})
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
 
-        # Check if file is readable
-        if not os.access(SYSTEM_LOG_FILE_PATH, os.R_OK):
-            logger.warning(f"System log file not readable: {SYSTEM_LOG_FILE_PATH}")
-            return jsonify(
-                {
-                    "logs": [],
-                    "error": "Log file not readable (permission denied)",
-                    "path": SYSTEM_LOG_FILE_PATH,
-                }
-            )
-
-        # Read last N lines from log file
-        with open(SYSTEM_LOG_FILE_PATH, "r", encoding="utf-8", errors="ignore") as f:
-            all_lines = f.readlines()
-            recent_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
-
-        # Strip newlines and return
-        logs = [line.rstrip("\n") for line in recent_lines]
-
-        return jsonify({"logs": logs, "count": len(logs)})
+        return jsonify(
+            {"logs": [], "error": "Cannot read system logs. Add vertebra to adm group: sudo usermod -aG adm vertebra"}
+        )
     except PermissionError as e:
         logger.error(f"Permission denied reading system logs: {e}")
         return (
-            jsonify(
-                {"logs": [], "error": "Permission denied - run with sudo or check file permissions"}
-            ),
+            jsonify({"logs": [], "error": "Permission denied reading system logs"}),
             403,
         )
     except Exception as e:
