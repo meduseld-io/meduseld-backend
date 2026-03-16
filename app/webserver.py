@@ -417,27 +417,57 @@ def authenticate_request():
         # Cloudflare Access JWTs are signed with RS256 but we can decode
         # the payload without verification since Cloudflare Access already
         # validated the token before forwarding the request to our origin.
-        # The token reaching us means Cloudflare has already authenticated the user.
         payload = jwt.decode(cf_token, options={"verify_signature": False})
 
-        # Extract user info from the JWT claims
-        # Cloudflare Access with Discord OIDC typically includes these:
-        discord_id = payload.get("sub", "")
+        # Cloudflare Access rewrites the OIDC claims into its own format.
+        # The original Discord user info from the OIDC id_token is available
+        # via the /cdn-cgi/access/get-identity endpoint using the user's cookie.
+        discord_id = None
+        username = None
+        display_name = None
+        avatar_hash = None
         email = payload.get("email", "")
-        username = (
-            payload.get("preferred_username", "") or email.split("@")[0] if email else "unknown"
-        )
-        display_name = payload.get("name", "") or username
 
-        # Custom claims from the Discord OIDC worker (if present)
-        discord_user = payload.get("discord_user", {})
-        if discord_user:
-            discord_id = discord_user.get("id", discord_id)
-            username = discord_user.get("username", username)
-            display_name = discord_user.get("global_name", display_name)
-            avatar_hash = discord_user.get("avatar")
-        else:
-            avatar_hash = None
+        # Try to get the full OIDC identity which includes our custom discord_user claims
+        try:
+            cf_cookie = request.cookies.get("CF_Authorization")
+            if cf_cookie:
+                identity_resp = requests.get(
+                    f"https://{request.host}/cdn-cgi/access/get-identity",
+                    headers={"Cookie": f"CF_Authorization={cf_cookie}"},
+                    timeout=3,
+                )
+                if identity_resp.status_code == 200:
+                    identity = identity_resp.json()
+                    # The OIDC claims from our worker are in the identity
+                    oidc = identity.get("oidc_fields", {})
+                    discord_id = oidc.get("sub") or identity.get("user_uuid")
+                    username = oidc.get("preferred_username", "")
+                    display_name = oidc.get("name", "")
+
+                    # Check for discord_user custom claim
+                    discord_user = oidc.get("discord_user", {})
+                    if discord_user:
+                        discord_id = discord_user.get("id", discord_id)
+                        username = discord_user.get("username", username)
+                        display_name = discord_user.get("global_name", display_name)
+                        avatar_hash = discord_user.get("avatar")
+
+                    logger.debug(
+                        f"Got identity from Cloudflare Access: {identity.get('email')}, discord_id={discord_id}"
+                    )
+        except Exception as e:
+            logger.debug(f"Could not fetch Cloudflare identity endpoint: {e}")
+
+        # Fallback to JWT claims if identity endpoint didn't work
+        if not discord_id:
+            discord_id = payload.get("sub", "")
+        if not username:
+            username = payload.get("preferred_username", "") or (
+                email.split("@")[0] if email else "unknown"
+            )
+        if not display_name:
+            display_name = payload.get("name", "") or username
 
         if not discord_id:
             logger.warning("JWT decoded but no user identifier found in claims")
