@@ -342,7 +342,7 @@ def validate_host():
 # Paths that don't require authentication
 PUBLIC_PATHS = [
     "/health",
-    "/health-bypass",
+    "/health-check-b8f3a9c2",
     "/api/check-service/",
 ]
 
