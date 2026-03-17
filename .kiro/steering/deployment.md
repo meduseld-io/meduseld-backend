@@ -78,7 +78,9 @@ Python Flask application at `/srv/meduseld`
 Cloudflare Worker (`worker.js`) that acts as an OIDC identity provider bridging Discord OAuth to Cloudflare Access.
 
 - Handles Discord OAuth flow: `/authorize`, `/token`, `/userinfo`, `/jwks.json`
-- Returns JWT id_tokens containing a `discord_user` object with real Discord profile data (id, username, global_name, avatar, discriminator)
+- OAuth scopes: `identify email guilds guilds.members.read`
+- Returns JWT id_tokens containing a `discord_user` object with real Discord profile data (id, username, global_name, avatar, discriminator, is_admin)
+- `is_admin` is determined by checking if the user has Discord role `1481870667015127144` in guild `924788704529252353` via `GET /users/@me/guilds/{guild_id}/member`
 - Cloudflare Access is configured with this worker as an OIDC identity provider
 - Claims config in Cloudflare Access: `["id", "preferred_username", "name", "discord_user"]`
 - The `discord_user` claim appears under the `custom` key in the Cloudflare Access identity response (NOT `oidc_fields`)
@@ -145,9 +147,10 @@ sudo -u postgres psql -d meduseld_db -c "SELECT discord_id, username, avatar_has
    - User stored in Flask session
 6. On static pages (services, system via meduseld-site):
    - `auth.js` decodes `CF_Authorization` cookie client-side for basic user info
-   - `auth.js` calls `/cdn-cgi/access/get-identity` to get full identity including `custom.discord_user`
-   - `auth.js` POSTs to `https://panel.meduseld.io/api/sync-identity` with real Discord data
-   - `auth.js` calls `https://panel.meduseld.io/api/me` to get role and DB-synced user info
+   - `auth.js` calls `/cdn-cgi/access/get-identity` to get full identity including `custom.discord_user` (which contains `is_admin` flag from herugrim)
+   - `auth.js` sets admin role immediately from `discord_user.is_admin` — no backend dependency
+   - `auth.js` POSTs to `https://panel.meduseld.io/api/sync-identity` with real Discord data (best-effort, non-blocking)
+   - `auth.js` calls `https://panel.meduseld.io/api/me` to get DB-synced user info (best-effort, non-blocking)
 
 ### Cross-Origin Auth (Static Pages → Flask API)
 
@@ -176,11 +179,14 @@ sudo -u postgres psql -d meduseld_db -c "SELECT discord_id, username, avatar_has
 
 Two roles exist: `user` (default) and `admin`.
 
-- Roles are stored in the `users` table `role` column
+- Admin status is primarily determined by Discord role: herugrim checks for role `1481870667015127144` in guild `924788704529252353` during OAuth and sets `discord_user.is_admin` in the JWT
+- `auth.js` reads `is_admin` from the `discord_user` claim via `/cdn-cgi/access/get-identity` — no backend call needed for client-side admin detection
+- This means admin UI (service cards, page access) works even when the Flask backend is offline
+- Roles are also stored in the `users` table `role` column for server-side checks
 - `@require_role("admin")` decorator on Flask endpoints checks `g.user.role`
-- `MeduseldAuth.hasRole("admin")` on the client side (checks after `syncUser()` completes)
+- `MeduseldAuth.hasRole("admin")` on the client side (reads `discord_user.is_admin` from identity, falls back to backend `syncUser()`)
 - Admin-only pages: SSH Terminal (`ssh.meduseld.io`), System Monitor (`system.meduseld.io`), Admin Panel (`admin.meduseld.io`)
-- Admin-only service cards (SSH, System Monitor) are hidden by default on the services page (`display: none`), shown via JS after auth sync confirms admin role
+- Admin-only service cards (SSH, System Monitor) are hidden by default on the services page (`display: none`), shown via JS after auth confirms admin role
 - Non-admin users navigating directly to admin-only pages are redirected to `services.meduseld.io?restricted=<page-name>`, which shows a toast banner
 - Server-side: SSH terminal route returns 403 for non-admin users; admin API endpoints use `@require_auth` + `@require_role("admin")`
 - Self-protection: admins cannot demote or deactivate their own account via the API
