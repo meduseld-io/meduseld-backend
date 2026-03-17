@@ -139,6 +139,7 @@ sudo -u postgres psql -d meduseld_db -c "SELECT discord_id, username, avatar_has
 4. Cloudflare Access sets `CF_Authorization` cookie and `Cf-Access-Jwt-Assertion` header
 5. On Flask backend (panel.meduseld.io):
    - `authenticate_request()` middleware decodes the `Cf-Access-Jwt-Assertion` JWT
+   - Fallback: if no header, decodes the `CF_Authorization` cookie instead (enables cross-origin auth from static pages)
    - The JWT `sub` is a Cloudflare UUID (NOT the Discord ID) — custom OIDC claims are not passed through
    - `User.get_or_create()` creates/finds user by discord_id or email fallback
    - User stored in Flask session
@@ -148,9 +149,19 @@ sudo -u postgres psql -d meduseld_db -c "SELECT discord_id, username, avatar_has
    - `auth.js` POSTs to `https://panel.meduseld.io/api/sync-identity` with real Discord data
    - `auth.js` calls `https://panel.meduseld.io/api/me` to get role and DB-synced user info
 
+### Cross-Origin Auth (Static Pages → Flask API)
+
+- Static pages on `services.meduseld.io` etc. call Flask API endpoints cross-origin via `fetch()` with `credentials: 'include'`
+- The Flask session cookie is scoped to `panel.meduseld.io` and is NOT sent on these cross-origin requests
+- The `Cf-Access-Jwt-Assertion` header is only added by Cloudflare on direct requests to the protected origin, not on JS fetch calls
+- Solution: `authenticate_request()` falls back to the `CF_Authorization` cookie, which Cloudflare Access sets on `.meduseld.io` (all subdomains), so it IS available on cross-origin requests
+- The `/api/sync-identity` endpoint also falls back to `g.user` (set by the middleware) when the session is empty
+- CORS is configured to allow `GET, POST, PUT, OPTIONS` with credentials for `*.meduseld.io` origins
+
 ### Important Cloudflare Access Quirks
 
 - `Cf-Access-Jwt-Assertion` header does NOT contain custom OIDC claims — only email, sub (Cloudflare UUID), iat, etc.
+- `CF_Authorization` cookie is set on `.meduseld.io` domain — available across all subdomains, used as auth fallback for cross-origin API calls
 - Real Discord data is only available via `/cdn-cgi/access/get-identity` endpoint (browser-only, not server-side)
 - Discord user data lives under `identity.custom.discord_user`, NOT `identity.oidc_fields`
 - The Cloudflare UUID (`sub`) changes per-session, so email is used as fallback lookup to prevent duplicate user records
