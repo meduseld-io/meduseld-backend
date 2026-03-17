@@ -81,6 +81,18 @@ CRITICAL_RAM = 95  # percent
 WARNING_DISK = 85  # percent
 CRITICAL_DISK = 95  # percent
 
+# ================= POWER MONITORING =================
+# Static power estimates (watts) for components without sensors
+POWER_ESTIMATE_RAM_PER_STICK = 3  # ~3W per DDR4 DIMM
+POWER_ESTIMATE_RAM_STICKS = 4  # 4x 8GB sticks (32GB total)
+POWER_ESTIMATE_NVME_IDLE = 2  # NVMe idle watts
+POWER_ESTIMATE_NVME_ACTIVE = 5  # NVMe active watts
+POWER_ESTIMATE_MOTHERBOARD = 15  # B550M chipset + VRMs
+POWER_ESTIMATE_AIO_PUMP = 4  # AIO pump watts
+POWER_ESTIMATE_FANS = 4  # Case fans total watts
+# Electricity cost per kWh (used for monthly estimate display)
+ELECTRICITY_COST_PER_KWH = 0.245  # GBP — adjust to your rate
+
 # ================= LOGGING =================
 LOG_LEVEL = "DEBUG"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 

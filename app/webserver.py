@@ -98,6 +98,14 @@ except ImportError as e:
     FLASK_PORT = 5000
     FLASK_DEBUG = False
     ev = "change-me-in-production"
+    POWER_ESTIMATE_RAM_PER_STICK = 3
+    POWER_ESTIMATE_RAM_STICKS = 4
+    POWER_ESTIMATE_NVME_IDLE = 2
+    POWER_ESTIMATE_NVME_ACTIVE = 5
+    POWER_ESTIMATE_MOTHERBOARD = 15
+    POWER_ESTIMATE_AIO_PUMP = 4
+    POWER_ESTIMATE_FANS = 4
+    ELECTRICITY_COST_PER_KWH = 0.245
 
 # Set Flask secret key for sessions (required for OAuth)
 app.secret_key = SECRET_KEY
@@ -774,6 +782,130 @@ def get_cpu_temperature():
         return None
 
 
+# Cache for power stats to avoid RAPL sleep on every API call
+_power_cache = {"data": None, "last_check": 0}
+
+
+def get_power_stats():
+    """Get estimated power consumption from hardware sensors and estimates.
+
+    Reads real data from:
+    - RAPL (Running Average Power Limit) for CPU/package power
+    - nvidia-smi for GPU power draw
+    Estimates the rest from static config values.
+    Results are cached for 5 seconds to avoid blocking API calls with RAPL sleep.
+    """
+    global _power_cache
+    now = time.time()
+    if _power_cache["data"] and (now - _power_cache["last_check"]) < 5:
+        return _power_cache["data"]
+
+    power = {
+        "cpu_watts": None,
+        "gpu_watts": None,
+        "ram_watts": None,
+        "storage_watts": None,
+        "other_watts": None,  # motherboard, fans, AIO
+        "total_watts": None,
+    }
+
+    try:
+        if IS_DEV:
+            import random
+
+            cpu_w = round(random.uniform(18, 50), 1)
+            gpu_w = round(random.uniform(12, 25), 1)
+            ram_w = round(POWER_ESTIMATE_RAM_PER_STICK * POWER_ESTIMATE_RAM_STICKS, 1)
+            storage_w = round(random.uniform(2, 5), 1)
+            other_w = round(
+                POWER_ESTIMATE_MOTHERBOARD + POWER_ESTIMATE_AIO_PUMP + POWER_ESTIMATE_FANS, 1
+            )
+            power["cpu_watts"] = cpu_w
+            power["gpu_watts"] = gpu_w
+            power["ram_watts"] = ram_w
+            power["storage_watts"] = storage_w
+            power["other_watts"] = other_w
+            power["total_watts"] = round(cpu_w + gpu_w + ram_w + storage_w + other_w, 1)
+            power["cost_per_kwh"] = ELECTRICITY_COST_PER_KWH
+            _power_cache["data"] = power
+            _power_cache["last_check"] = time.time()
+            return power
+
+        # --- CPU power via RAPL ---
+        rapl_paths = [
+            "/sys/class/powercap/intel-rapl:0/energy_uj",  # Intel
+            "/sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj",  # Alt Intel path
+        ]
+        # Also check for AMD RAPL (uses same interface on modern kernels)
+        for rapl_path in rapl_paths:
+            if os.path.exists(rapl_path):
+                try:
+                    with open(rapl_path, "r") as f:
+                        energy1 = int(f.read().strip())
+                    time.sleep(0.1)
+                    with open(rapl_path, "r") as f:
+                        energy2 = int(f.read().strip())
+                    # energy is in microjoules, delta / time = watts
+                    watts = (energy2 - energy1) / (0.1 * 1_000_000)
+                    power["cpu_watts"] = round(max(watts, 0), 1)
+                except Exception:
+                    pass
+                break
+
+        # Fallback: estimate CPU power from usage percentage and TDP
+        if power["cpu_watts"] is None:
+            try:
+                cpu_pct = psutil.cpu_percent(interval=0)
+                # Ryzen 7 2700: 65W TDP, ~20W idle
+                estimated = 20 + (45 * cpu_pct / 100)
+                power["cpu_watts"] = round(estimated, 1)
+            except Exception:
+                power["cpu_watts"] = 0
+
+        # --- GPU power via nvidia-smi ---
+        try:
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=power.draw", "--format=csv,noheader,nounits"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                gpu_watts = float(result.stdout.strip().split("\n")[0])
+                power["gpu_watts"] = round(gpu_watts, 1)
+        except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
+            # nvidia-smi not available or GPU not present
+            power["gpu_watts"] = 0
+
+        # --- Static estimates ---
+        power["ram_watts"] = round(POWER_ESTIMATE_RAM_PER_STICK * POWER_ESTIMATE_RAM_STICKS, 1)
+
+        # Storage: NVMe is always drawing some power when system is on
+        power["storage_watts"] = POWER_ESTIMATE_NVME_ACTIVE
+
+        power["other_watts"] = round(
+            POWER_ESTIMATE_MOTHERBOARD + POWER_ESTIMATE_AIO_PUMP + POWER_ESTIMATE_FANS, 1
+        )
+
+        # Total
+        components = [
+            power["cpu_watts"],
+            power["gpu_watts"],
+            power["ram_watts"],
+            power["storage_watts"],
+            power["other_watts"],
+        ]
+        power["total_watts"] = round(sum(w for w in components if w is not None), 1)
+        power["cost_per_kwh"] = ELECTRICITY_COST_PER_KWH
+
+    except Exception as e:
+        logger.debug(f"Error getting power stats: {e}")
+
+    _power_cache["data"] = power
+    _power_cache["last_check"] = time.time()
+    return power
+
+
 def get_system_stats():
     """Get system resource usage"""
     try:
@@ -804,6 +936,9 @@ def get_system_stats():
         # Get CPU temperature
         cpu_temp = get_cpu_temperature()
 
+        # Get power consumption
+        power = get_power_stats()
+
         return {
             "cpu": cpu,
             "cpu_temp": cpu_temp,
@@ -813,6 +948,7 @@ def get_system_stats():
             "disk_percent": disk.percent,
             "disk_used": round(used_disk_size / (1024**3), 2),
             "disk_total": round(total_disk_size / (1024**3), 2),
+            "power": power,
         }
     except Exception as e:
         logger.error(f"Error getting system stats: {e}")
@@ -825,6 +961,14 @@ def get_system_stats():
             "disk_percent": 0,
             "disk_used": 0,
             "disk_total": 0,
+            "power": {
+                "cpu_watts": None,
+                "gpu_watts": None,
+                "ram_watts": None,
+                "storage_watts": None,
+                "other_watts": None,
+                "total_watts": None,
+            },
         }
 
 
@@ -1899,6 +2043,14 @@ def api_stats():
                         "ram_used": 0,
                         "ram_total": 0,
                         "disk_percent": 0,
+                        "power": {
+                            "cpu_watts": None,
+                            "gpu_watts": None,
+                            "ram_watts": None,
+                            "storage_watts": None,
+                            "other_watts": None,
+                            "total_watts": None,
+                        },
                     },
                     "icarus": None,
                     "uptime": 0,
@@ -2524,6 +2676,9 @@ def collect_stats():
                     "system_ram": stats["ram_used"],
                     "icarus_cpu": icarus["cpu"] if icarus else 0,
                     "icarus_ram": icarus["ram"] if icarus else 0,
+                    "power_total": stats["power"]["total_watts"] if stats["power"] else 0,
+                    "power_cpu": stats["power"]["cpu_watts"] if stats["power"] else 0,
+                    "power_gpu": stats["power"]["gpu_watts"] if stats["power"] else 0,
                 }
             )
 
