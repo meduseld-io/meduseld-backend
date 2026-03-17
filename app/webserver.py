@@ -50,8 +50,28 @@ def add_cors_headers(response):
     if origin and "meduseld.io" in origin:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Max-Age"] = "3600"
+    return response
+
+
+# Explicit OPTIONS handler for cross-origin API endpoints.
+# Cloudflare Access may block preflight requests that don't carry cookies,
+# so this only helps if the request actually reaches Flask.
+@app.route("/api/me", methods=["OPTIONS"])
+@app.route("/api/sync-identity", methods=["OPTIONS"])
+@app.route("/api/admin/users", methods=["OPTIONS"])
+@app.route("/api/admin/users/<int:user_id>", methods=["OPTIONS"])
+def cors_preflight(**kwargs):
+    response = make_response("", 204)
+    origin = request.headers.get("Origin")
+    if origin and "meduseld.io" in origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Max-Age"] = "3600"
     return response
 
 
