@@ -9,7 +9,7 @@
       <a
         href="https://ssh.meduseld.io"
         class="btn btn-dark btn-sm"
-        style="padding: 0.25rem 0.75rem"
+        style="padding: 0.25rem 0.75rem{% if not user or user.role != 'admin' %}; display: none{% endif %}"
       >
         <i class="bi bi-terminal"></i> <span class="btn-label">SSH Terminal</span>
       </a>

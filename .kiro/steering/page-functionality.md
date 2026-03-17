@@ -28,7 +28,7 @@ Central navigation hub. All service cards check live status via a Cloudflare Wor
 - "Changelog" button → opens a modal (content placeholder, says "coming soon")
 - Discord widget (Widgetbot Crate) → embedded chat bubble in bottom-right, links to server channel `1474674474036232204`
 - Speech bubble notification → appears after 3 seconds, fades after 8 seconds, says "Server suggestion or problem? Send a Discord message!"
-- Profile widget (top-right) → shows avatar, display name, and Admin badge for admins. Dropdown includes: username, role, "Admin Panel" link (admin only, links to `https://admin.meduseld.io`), and Logout
+- Profile widget (top-right, inside header nav bar) → shows avatar, display name, and Admin badge for admins. Dropdown includes: username, role, "Admin Panel" link (admin only, links to `https://admin.meduseld.io`), and Logout
 - Copyright footer with quietarcade link and version badge
 
 ### Service Cards (Active)
@@ -43,7 +43,7 @@ Each active service card has a status indicator badge that shows Online/Offline/
 
 2. **Edoras (Jellyfin/Media)**
    - Status badge: checks jellyfin health
-   - "Open Edoras" button → calls `/api/jellyfin-auth` to auto-provision a Jellyfin account and get an auth token, then redirects to `jellyfin.meduseld.io/sso-login` which sets localStorage credentials and opens Jellyfin logged in. Falls back to opening Jellyfin directly if auth fails. Button shows "Connecting..." spinner during auth. (disabled when offline)
+   - "Open Edoras" button → calls `/api/jellyfin-auth` to auto-provision a Jellyfin account and get an auth token, then navigates (same tab) to `jellyfin.meduseld.io/sso-login` which sets localStorage credentials and opens Jellyfin logged in. Falls back to navigating to Jellyfin directly if auth fails. Button shows "Connecting..." spinner during auth. (disabled when offline). Uses `window.location.href` instead of `window.open` to avoid mobile popup blockers.
    - SSO login page (`/sso-login`): uses an iframe-first approach to avoid a race condition where Jellyfin's ConnectionManager overwrites localStorage credentials. Loads `/web/index.html` in a hidden iframe, polls localStorage every 250ms until Jellyfin initializes `jellyfin_credentials` with `Servers[0].Id`, then patches in `AccessToken`/`UserId` and redirects. Falls back to direct credential write after 15 seconds.
    - Direct visit auto-login: when a user visits `jellyfin.meduseld.io` directly with a valid `CF_Authorization` cookie, an injected script automatically calls `/api/jellyfin-auth`, then polls localStorage waiting for Jellyfin's ConnectionManager to initialize credentials before patching in the auth token. Uses `sessionStorage` flag to prevent retry loops (one attempt per session).
 
@@ -114,7 +114,9 @@ Server logs viewer and system management page. Non-admin users are redirected to
 
 ### Navigation
 
-- "Back to Services" button → navigates to `https://services.meduseld.io`
+- Header nav bar (top of page, inside page flow):
+  - Left side: "Back to Services" button → navigates to `https://services.meduseld.io`
+  - Right side: Profile widget (same as services page)
 
 ### Server Logs Panel
 
@@ -190,7 +192,7 @@ Authenticated Flask page for controlling the Icarus dedicated game server. Requi
 ### Navigation Bar
 
 - "Back to Services" button → navigates to `https://services.meduseld.io`
-- "SSH Terminal" button → opens `https://ssh.meduseld.io` in new tab
+- "SSH Terminal" button (admin only — hidden for non-admin users) → opens `https://ssh.meduseld.io` in new tab
 - "Backup" dropdown:
   - "Download Backup" → `GET /download-backup` (downloads file)
   - "Backup to Cloud" → `GET /backup-to-cloud` (triggers Google Drive upload)
