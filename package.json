@@ -1,15 +1,20 @@
 {
   "name": "meduseld",
-  "version": "0.4.0-alpha",
+  "version": "0.5.0-alpha",
   "description": "Meduseld Server Control Panel",
   "private": true,
   "scripts": {
     "prepare": "husky install",
-    "commit": "cz"
+    "commit": "cz",
+    "release": "commit-and-tag-version --prerelease alpha",
+    "release:minor": "commit-and-tag-version --release-as minor --prerelease alpha",
+    "release:major": "commit-and-tag-version --release-as major --prerelease alpha",
+    "release:stable": "commit-and-tag-version"
   },
   "devDependencies": {
     "@commitlint/cli": "^18.4.3",
     "@commitlint/config-conventional": "^18.4.3",
+    "commit-and-tag-version": "^12.7.0",
     "commitizen": "^4.3.0",
     "cz-conventional-changelog": "^3.3.0",
     "husky": "^8.0.3"

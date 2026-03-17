@@ -398,3 +398,35 @@ When the server "goes offline" after pressing start:
 - `Flask-Migrate` — Alembic-based DB migrations
 - `psycopg2-binary` — PostgreSQL driver
 - `PyJWT` — JWT decoding for Cloudflare Access tokens
+
+## Release Pipeline
+
+Both `meduseld` and `meduseld-site` use `commit-and-tag-version` (maintained fork of `standard-version`) for automated releases.
+
+### How It Works
+
+- Reads conventional commits since the last git tag
+- Bumps version in `package.json` based on commit types (`feat` → minor, `fix` → patch, breaking → major)
+- Auto-generates CHANGELOG.md entries grouped by type
+- Creates a git tag (e.g. `v0.6.0-alpha`)
+- Makes a single "chore(release)" commit with all changes
+
+### Release Commands
+
+- `npm run release` — auto-bump based on commits (prerelease alpha)
+- `npm run release:minor` — force minor bump (prerelease alpha)
+- `npm run release:major` — force major bump (prerelease alpha)
+- `npm run release:stable` — drop the `-alpha` suffix for stable release
+
+### Release Workflow
+
+1. Merge PRs to `main` as usual
+2. Run `npm run release`
+3. `git push --follow-tags`
+4. GitHub Action (`.github/workflows/release.yml`) creates a GitHub Release with changelog as release notes
+
+### Configuration Files
+
+- `package.json` — version field and release scripts
+- `.versionrc.json` — changelog section headings and type visibility (docs/test/chore/build/ci hidden from changelog)
+- `.github/workflows/release.yml` — creates GitHub Release on tag push, extracts changelog section for release notes
