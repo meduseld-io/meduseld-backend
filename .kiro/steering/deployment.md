@@ -186,6 +186,8 @@ Two roles exist: `user` (default) and `admin`.
 - `auth.js` reads `is_admin` from the `discord_user` claim via `/cdn-cgi/access/get-identity` — no backend call needed for client-side admin detection
 - This means admin UI (service cards, page access) works even when the Flask backend is offline
 - Roles are also stored in the `users` table `role` column for server-side checks
+- DB role auto-syncs from Discord: `authenticate_request()` promotes/demotes based on `discord_user.is_admin` in the JWT, and `sync-identity` does the same from the client-posted `is_admin` flag. This means adding/removing the Discord admin role automatically updates the DB role on next login.
+- `auth.js` sends `is_admin` in the `/api/sync-identity` POST payload so static-page-only users also get their DB role synced
 - `@require_role("admin")` decorator on Flask endpoints checks `g.user.role`
 - `MeduseldAuth.hasRole("admin")` on the client side (reads `discord_user.is_admin` from identity, falls back to backend `syncUser()`)
 - Admin-only pages: SSH Terminal (`ssh.meduseld.io`), System Monitor (`system.meduseld.io`), Admin Panel (`admin.meduseld.io`)
@@ -196,7 +198,7 @@ Two roles exist: `user` (default) and `admin`.
 
 ### Bootstrap: Setting the First Admin
 
-Since the admin page requires admin role, the first admin must be set directly in the database:
+The first admin is automatically set when a user with the Discord admin role (`1481870667015127144`) logs in — the DB role syncs from the JWT. Manual DB promotion is only needed if the Discord role check isn't working:
 
 ```bash
 # Check existing users
@@ -206,7 +208,7 @@ sudo -u postgres psql -d meduseld_db -c "SELECT id, discord_id, username, role F
 sudo -u postgres psql -d meduseld_db -c "UPDATE users SET role = 'admin' WHERE discord_id = 'YOUR_DISCORD_ID';"
 ```
 
-After the first admin is set, subsequent admins can be promoted from the admin page UI.
+After the first admin is set, subsequent admins can be promoted from the admin page UI or by assigning the Discord admin role.
 
 ### Public Paths (No Auth Required)
 
