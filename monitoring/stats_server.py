@@ -15,6 +15,7 @@ Estimates the rest from static config values.
 """
 
 import json
+import logging
 import os
 import time
 import threading
@@ -22,6 +23,13 @@ import subprocess
 import psutil
 from collections import deque
 from http.server import HTTPServer, BaseHTTPRequestHandler
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="[monitoring] %(asctime)s %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("stats_server")
 
 PORT = 5004
 
@@ -58,8 +66,8 @@ def get_cpu_temperature():
             if os.path.exists(zone):
                 with open(zone, "r") as f:
                     return round(int(f.read().strip()) / 1000.0, 1)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to read CPU temperature: %s", e)
     return None
 
 
@@ -93,8 +101,8 @@ def get_power_stats():
                     with open(rapl_path, "r") as f:
                         e2 = int(f.read().strip())
                     power["cpu_watts"] = round(max((e2 - e1) / (0.1 * 1_000_000), 0), 1)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Failed to read RAPL energy: %s", e)
                 break
 
         # Fallback: estimate from CPU usage and TDP
@@ -102,7 +110,8 @@ def get_power_stats():
             try:
                 pct = psutil.cpu_percent(interval=0)
                 power["cpu_watts"] = round(20 + (45 * pct / 100), 1)
-            except Exception:
+            except Exception as e:
+                logger.warning("Failed to estimate CPU power from usage: %s", e)
                 power["cpu_watts"] = 0
 
         # GPU power via nvidia-smi
@@ -133,7 +142,7 @@ def get_power_stats():
         power["total_watts"] = round(sum(w for w in components if w is not None), 1)
         power["cost_per_kwh"] = COST_PER_KWH
     except Exception as e:
-        print(f"[monitoring] Power stats error: {e}")
+        logger.error("Power stats error: %s", e)
 
     _power_cache["data"] = power
     _power_cache["ts"] = time.time()
@@ -156,9 +165,10 @@ def get_system_stats():
                         u = psutil.disk_usage(part.mountpoint)
                         total_disk += u.total
                         used_disk += u.used
-                    except Exception:
-                        pass
-        except Exception:
+                    except Exception as e:
+                        logger.warning("Failed to read disk usage for %s: %s", part.mountpoint, e)
+        except Exception as e:
+            logger.warning("Failed to enumerate disk partitions: %s", e)
             total_disk = disk.total
             used_disk = disk.used
 
@@ -174,7 +184,7 @@ def get_system_stats():
             "power": get_power_stats(),
         }
     except Exception as e:
-        print(f"[monitoring] Stats error: {e}")
+        logger.error("Stats collection error: %s", e)
         return {
             "cpu": 0,
             "cpu_temp": None,
@@ -211,7 +221,7 @@ def collect_stats_loop():
                 }
             )
         except Exception as e:
-            print(f"[monitoring] Collection error: {e}")
+            logger.error("History collection loop error: %s", e)
         time.sleep(30)
 
 
@@ -244,15 +254,15 @@ class MonitoringHandler(BaseHTTPRequestHandler):
             self._respond(404, {"error": "Not found"})
 
     def log_message(self, format, *args):
-        print(f"[monitoring] {args[0]}")
+        logger.info(args[0])
 
 
 if __name__ == "__main__":
     # Start background stats collection
     t = threading.Thread(target=collect_stats_loop, daemon=True)
     t.start()
-    print(f"[monitoring] Stats collection thread started (30s interval)")
+    logger.info("Stats collection thread started (30s interval)")
 
     server = HTTPServer(("0.0.0.0", PORT), MonitoringHandler)
-    print(f"[monitoring] Listening on 0.0.0.0:{PORT}")
+    logger.info("Listening on 0.0.0.0:%d", PORT)
     server.serve_forever()
