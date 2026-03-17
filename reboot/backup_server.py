@@ -78,13 +78,29 @@ class BackupHandler(BaseHTTPRequestHandler):
             try:
                 result = subprocess.run(
                     ["sudo", "systemctl", "start", "meduseld-backup.service"],
-                    capture_output=True, text=True, timeout=1800
+                    capture_output=True,
+                    text=True,
+                    timeout=1800,
                 )
                 if result.returncode == 0:
-                    backup_status = {"running": False, "last_result": "success"}
+                    # Read backup filename if available
+                    filename = None
+                    try:
+                        with open("/tmp/meduseld-last-backup-name", "r") as f:
+                            filename = f.read().strip()
+                    except Exception:
+                        pass
+                    backup_status = {
+                        "running": False,
+                        "last_result": "success",
+                        "filename": filename,
+                    }
                     print("[INFO] Backup completed successfully")
                 else:
-                    backup_status = {"running": False, "last_result": f"failed: {result.stderr.strip()}"}
+                    backup_status = {
+                        "running": False,
+                        "last_result": f"failed: {result.stderr.strip()}",
+                    }
                     print(f"[ERROR] Backup failed: {result.stderr.strip()}")
             except subprocess.TimeoutExpired:
                 backup_status = {"running": False, "last_result": "failed: timeout"}
