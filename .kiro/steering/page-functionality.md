@@ -38,7 +38,7 @@ Each active service card has a status indicator badge that shows Online/Offline/
 1. **Icarus Server (Game Server Panel)**
    - Status badge: checks panel health, shows Online/Offline/Cloudflare Tunnel Down
    - "Open Control Panel" button → links to `https://panel.meduseld.io` (disabled when offline)
-   - Production/Development mode toggle badge → click to switch between `panel.meduseld.io` and `panel.meduseld.io?env=development`. Persists in localStorage as `panelDevMode`. Shows a toast notification on toggle.
+   - Production/Development mode toggle badge → currently hidden. When visible, click to switch between `panel.meduseld.io` and `panel.meduseld.io?env=development`. Persists in localStorage as `panelDevMode`. Shows a toast notification on toggle.
    - Game name and description are dynamically set from `CONFIG.gameName` (currently "Icarus")
 
 2. **Palantir (Jellyfin/Media)**
@@ -137,7 +137,7 @@ Server logs viewer and system management page. Non-admin users are redirected to
 - Shows progress spinner during backup
 - Polls `https://health.meduseld.io/check/backup-status` every 5 seconds until complete
 - Handles "already in progress" state
-- On success: shows green checkmark with "Backup uploaded successfully", hides Start Backup button, Cancel becomes a green "Close" button. Resets when modal is reopened.
+- On success: shows green checkmark with "Backup uploaded successfully" and the backup filename (if available from `/tmp/meduseld-last-backup-name`), hides Start Backup button, Cancel becomes a green "Close" button. Resets when modal is reopened.
 - On failure: button resets after 5 seconds
 - "Cancel" button → closes modal
 
