@@ -500,6 +500,22 @@ def authenticate_request():
             email=email,
         )
 
+        # Sync admin role from Discord — is_admin in the JWT is set by
+        # herugrim based on the Discord admin role, so it's authoritative.
+        jwt_is_admin = discord_user.get("is_admin", False) if discord_user else False
+        if jwt_is_admin and user.role != "admin":
+            user.role = "admin"
+            from database import db
+
+            db.session.commit()
+            logger.info(f"Auto-promoted {username} to admin from Discord role")
+        elif not jwt_is_admin and user.role == "admin":
+            user.role = "user"
+            from database import db
+
+            db.session.commit()
+            logger.info(f"Auto-demoted {username} to user (Discord role removed)")
+
         session["user"] = user.to_dict()
         g.user = user
         logger.info(f"Authenticated user: {username} ({discord_id})")
@@ -581,6 +597,18 @@ def api_sync_identity():
         avatar_hash=avatar_hash,
         email=email,
     )
+
+    # Sync admin role from Discord — the is_admin flag comes from herugrim's
+    # check of the Discord admin role, so it's authoritative.
+    is_admin = data.get("is_admin", False)
+    if is_admin and user.role != "admin":
+        user.role = "admin"
+        db.session.commit()
+        logger.info(f"Auto-promoted {user.username} to admin from Discord role")
+    elif not is_admin and user.role == "admin":
+        user.role = "user"
+        db.session.commit()
+        logger.info(f"Auto-demoted {user.username} to user (Discord role removed)")
 
     try:
         session["user"] = user.to_dict()
