@@ -47,6 +47,11 @@ Served via Cloudflare Pages at `/srv/meduseld-site`
   - Shows "Backend Offline" state if Flask is down
   - Calls `health.meduseld.io/check/team-roster` for data (routed through health to bypass Cloudflare Access session requirement). The endpoint is named "team-roster" instead of "admin-users" to avoid ad-blocker false positives. The admin page reads the `CF_Authorization` cookie via JS and passes its value as a `cf_token` query parameter (GET) or `_cf_token` in the JSON body (PUT) — this avoids both Cloudflare cookie interception and CORS preflight issues. Flask's `_authenticate_from_cookie()` checks cookie, header, query param, and body for the token.
 
+- **herugrim.meduseld.io** (herugrim/index.html)
+  - Public landing page for the Herugrim open-source project
+  - Centered logo, title, subtitle, and "View on GitHub" link
+  - No authentication required
+
 ### meduseld Repository (Flask Backend)
 
 Python Flask application at `/srv/meduseld`
@@ -77,10 +82,10 @@ Python Flask application at `/srv/meduseld`
 
 Cloudflare Worker (`worker.js`) that acts as an OIDC identity provider bridging Discord OAuth to Cloudflare Access.
 
-- Handles Discord OAuth flow: `/authorize`, `/token`, `/userinfo`, `/jwks.json`
+- Handles Discord OAuth flow: `/authorize`, `/token`, `/jwks.json`
 - OAuth scopes: `identify email guilds guilds.members.read`
 - Returns JWT id_tokens containing a `discord_user` object with real Discord profile data (id, username, global_name, avatar, discriminator, is_admin)
-- `is_admin` is determined by checking if the user has Discord role `1481870667015127144` in guild `924788704529252353` via `GET /users/@me/guilds/{guild_id}/member`
+- `is_admin` detection is optional — enabled by setting `ADMIN_ROLE_ID` in `worker.js`. When enabled, checks if the user has that role in the configured `ADMIN_GUILD_ID` (defaults to `ALLOWED_GUILDS[0]` if not set) via `GET /users/@me/guilds/{guild_id}/member`. When disabled, `is_admin` is always `false`.
 - Cloudflare Access is configured with this worker as an OIDC identity provider
 - Claims config in Cloudflare Access: `["id", "preferred_username", "name", "discord_user"]`
 - The `discord_user` claim appears under the `custom` key in the Cloudflare Access identity response (NOT `oidc_fields`)

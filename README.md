@@ -1,7 +1,7 @@
 # Meduseld Backend
 
 <div align="center">
-  <img src="app/static/meduseldminimal.png" alt="Meduseld" width="150">
+  <img src="app/static/logo.png" alt="Meduseld" width="150">
 </div>
 
 Flask backend for the Meduseld server management platform. Provides the game server control panel, SSH terminal wrapper, health dashboard, and API endpoints for the static site pages.

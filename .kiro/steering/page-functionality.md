@@ -403,6 +403,20 @@ Each card has an icon, title, description, and "Open" button that opens the serv
 
 ---
 
+## herugrim.meduseld.io — Herugrim Landing Page
+
+File: `meduseld-site/herugrim/index.html`
+
+Public landing page for the Herugrim open-source project.
+
+- Centered Herugrim logo (fade-in animation)
+- Title "Herugrim" and subtitle "Discord OIDC Provider for Cloudflare Access"
+- "View on GitHub" button → opens `https://github.com/meduseld-io/herugrim` in new tab
+- Dark radial gradient background
+- No authentication required
+
+---
+
 ## health.meduseld.io — Service Health Dashboard
 
 File: `meduseld/app/templates/health.html` (extends `base.html`)
