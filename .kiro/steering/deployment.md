@@ -357,7 +357,7 @@ Three lightweight Python HTTP servers run independently of the Flask app so the 
    - Triggers `meduseld-backup.service` via systemd
    - Env: `BACKUP_SECRET`
 
-Flask proxy routing (`check_service()` in `webserver.py`): requests to `health.meduseld.io/check/stats` → `127.0.0.1:5004/stats`, `/check/history` → `127.0.0.1:5004/history`, `/check/backup` → `127.0.0.1:5003/backup`, `/check/backup-status` → `127.0.0.1:5003/status`, `/check/reboot` → `127.0.0.1:5002/reboot`, `/check/system-logs` → Flask's own `api_server_logs()`, `/check/team-roster` → admin users list (authenticated via CF_Authorization JWT passed as `cf_token` query param or `_cf_token` in body), `/check/team-roster-<id>` → admin user update (PUT), `/check/calendar` → calendar events list (GET) and create (POST, admin only), `/check/calendar-<id>` → delete calendar event (DELETE, admin only) or RSVP (PUT, any authenticated user). All authenticated endpoints use `_authenticate_from_cookie()` which reads the CF_Authorization JWT from cookie, header, `cf_token` query param, or `_cf_token` in JSON body.
+Flask proxy routing (`check_service()` in `webserver.py`): requests to `health.meduseld.io/check/stats` → `127.0.0.1:5004/stats`, `/check/history` → `127.0.0.1:5004/history`, `/check/backup` → `127.0.0.1:5003/backup`, `/check/backup-status` → `127.0.0.1:5003/status`, `/check/reboot` → `127.0.0.1:5002/reboot`, `/check/system-logs` → Flask's own `api_server_logs()`, `/check/team-roster` → admin users list (authenticated via CF_Authorization JWT passed as `cf_token` query param or `_cf_token` in body), `/check/team-roster-<id>` → admin user update (PUT), `/check/calendar` → calendar events list (GET) and create (POST, admin only), `/check/calendar-<id>` → delete calendar event (DELETE, admin only) or edit calendar event (PUT with `title`/`event_date`, admin only) or RSVP (PUT with `status`, any authenticated user). All authenticated endpoints use `_authenticate_from_cookie()` which reads the CF_Authorization JWT from cookie, header, `cf_token` query param, or `_cf_token` in JSON body.
 
 ### Common Issues
 
@@ -415,6 +415,7 @@ When the server "goes offline" after pressing start:
 
 - `GET /api/calendar/events` - (Authenticated) List upcoming calendar events, sorted by date ascending
 - `POST /api/calendar/events` - (Admin only) Create a new calendar event. Body: `{title, event_date, description?}`
+- `PUT /api/calendar/events/<id>` - (Admin only) Edit a calendar event. Body: `{title?, event_date?, description?}`. If `title` or `event_date` is present, treated as an edit (admin required). Otherwise falls through to RSVP handling.
 - `DELETE /api/calendar/events/<id>` - (Admin only) Delete a calendar event
 
 ### Jellyfin Auto-Login

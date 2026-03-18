@@ -3084,7 +3084,43 @@ def check_service(service):
 
             if request.method == "PUT":
                 data = request.get_json()
-                if not data or not data.get("status"):
+                if not data:
+                    return _cal_cors(jsonify({"error": "No data provided"}), 400)
+
+                # Edit event (admin only) — if title or event_date is present
+                if data.get("title") or data.get("event_date"):
+                    if user.role != "admin":
+                        return _cal_cors(jsonify({"error": "Insufficient permissions"}), 403)
+                    from models import CalendarEvent
+                    from database import db
+
+                    event = CalendarEvent.query.get(event_id)
+                    if not event:
+                        return _cal_cors(jsonify({"error": "Event not found"}), 404)
+                    try:
+                        if data.get("title"):
+                            event.title = data["title"]
+                        if data.get("event_date"):
+                            event.event_date = datetime.strptime(
+                                data["event_date"][:19], "%Y-%m-%dT%H:%M:%S"
+                            )
+                        if "description" in data:
+                            event.description = data.get("description", "")
+                        db.session.commit()
+                        logger.info(
+                            "Admin %s edited calendar event %d: %s",
+                            user.username,
+                            event_id,
+                            event.title,
+                        )
+                        return _cal_cors(jsonify({"ok": True, "event": event.to_dict()}), 200)
+                    except Exception as e:
+                        db.session.rollback()
+                        logger.error("Failed to edit calendar event: %s", e)
+                        return _cal_cors(jsonify({"error": "Edit failed"}), 500)
+
+                # RSVP — status field required
+                if not data.get("status"):
                     return _cal_cors(jsonify({"error": "Status required"}), 400)
                 status = data["status"]
                 if status not in ("going", "maybe", "not_going"):
