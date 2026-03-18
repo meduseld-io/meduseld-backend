@@ -403,7 +403,7 @@ When the server "goes offline" after pressing start:
 
 ## Release Pipeline
 
-Both `meduseld` and `meduseld-site` use `commit-and-tag-version` (maintained fork of `standard-version`) for automated releases.
+Both `meduseld` and `meduseld-site` use `commit-and-tag-version` (maintained fork of `standard-version`) for automated releases. `herugrim` uses the same pipeline starting from v1.0.0.
 
 ### How It Works
 
@@ -416,9 +416,11 @@ Both `meduseld` and `meduseld-site` use `commit-and-tag-version` (maintained for
 ### Release Commands
 
 - `npm run release` — auto-bump based on commits (prerelease alpha)
-- `npm run release:minor` — force minor bump (prerelease alpha)
-- `npm run release:major` — force major bump (prerelease alpha)
+- `npm run release:patch` — force patch bump (prerelease alpha)
+- `npm run release:minor` — force minor bump (clean version, e.g., `0.7.0`)
+- `npm run release:major` — force major bump (clean version, e.g., `1.0.0`)
 - `npm run release:stable` — drop the `-alpha` suffix for stable release
+- `npx commit-and-tag-version --release-as X.Y.Z-alpha` — exact version with alpha suffix (most reliable for specific alpha releases)
 
 ### Release Workflow
 

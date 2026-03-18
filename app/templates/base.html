@@ -314,11 +314,12 @@
       </p>
       <p class="text-light mb-0" style="font-size: 0.75rem">
         <a
-          href="https://github.com/meduseld404/meduseld-site"
+          id="version-badge"
+          href="https://github.com/meduseld404/meduseld-backend/releases"
           target="_blank"
           class="text-light text-decoration-none"
         >
-          v0.5.0-alpha
+          loading...
         </a>
       </p>
     </footer>
@@ -327,6 +328,27 @@
 
     <script>
       document.getElementById('copyright-year').textContent = new Date().getFullYear();
+
+      // Fetch latest release version for footer badge
+      (function () {
+        var badge = document.getElementById('version-badge');
+        if (!badge) return;
+        fetch('https://api.github.com/repos/meduseld404/meduseld-backend/releases/latest')
+          .then(function (res) {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res.json();
+          })
+          .then(function (data) {
+            if (data.tag_name) {
+              badge.textContent = data.tag_name;
+              badge.href = data.html_url;
+            }
+          })
+          .catch(function (err) {
+            console.error('Failed to fetch latest release version:', err);
+            badge.textContent = 'v?.?.?';
+          });
+      })();
     </script>
   </body>
 </html>

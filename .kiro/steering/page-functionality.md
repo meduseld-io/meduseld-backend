@@ -11,7 +11,7 @@ File: `meduseld-site/index.html`
 Minimal splash page with a "404 Server Not Found" joke theme.
 
 - "Enter the Great Hall" button → navigates to `https://services.meduseld.io`
-- Footer links: quietarcade website, GitHub repo (version badge)
+- Footer links: quietarcade website, dynamic version badge (fetches latest release tag from GitHub API, links to release page)
 - Copyright year auto-fills via JS
 
 ---
@@ -29,7 +29,7 @@ Central navigation hub. All service cards check live status via a Cloudflare Wor
 - Discord widget (Widgetbot Crate) → embedded chat bubble in bottom-right, links to server channel `1474674474036232204`
 - Speech bubble notification → appears after 3 seconds, fades after 8 seconds, says "Server suggestion or problem? Send a Discord message!"
 - Profile widget (top-right, inside header nav bar) → shows avatar, display name, and Admin badge for admins. Dropdown includes: username, role, "Admin Panel" link (admin only, links to `https://admin.meduseld.io`), and Logout
-- Copyright footer with quietarcade link and version badge
+- Copyright footer with quietarcade link and dynamic version badge (fetches latest release from GitHub API, links to release page)
 
 ### Service Cards (Active)
 

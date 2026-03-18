@@ -7,8 +7,9 @@
     "prepare": "husky install",
     "commit": "cz",
     "release": "commit-and-tag-version --prerelease alpha",
-    "release:minor": "commit-and-tag-version --release-as minor --prerelease alpha",
-    "release:major": "commit-and-tag-version --release-as major --prerelease alpha",
+    "release:patch": "commit-and-tag-version --release-as patch --prerelease alpha",
+    "release:minor": "commit-and-tag-version --release-as minor",
+    "release:major": "commit-and-tag-version --release-as major",
     "release:stable": "commit-and-tag-version"
   },
   "devDependencies": {
