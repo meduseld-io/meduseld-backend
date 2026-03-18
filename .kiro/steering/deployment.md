@@ -82,10 +82,14 @@ Python Flask application at `/srv/meduseld`
 
 Cloudflare Worker (`worker.js`) that acts as an OIDC identity provider bridging Discord OAuth to Cloudflare Access.
 
-- Handles Discord OAuth flow: `/authorize`, `/token`, `/jwks.json`
-- OAuth scopes: `identify email guilds guilds.members.read`
+- Handles Discord OAuth flow: `/authorize`, `/token`, `/jwks.json`, `/health`
+- All configuration via Wrangler environment variables (`CLIENT_ID`, `CLIENT_SECRET`, `REDIRECT_URI`, `ALLOWED_GUILDS`, `ADMIN_GUILD_ID`, `ADMIN_ROLE_ID`) — no hardcoded values in source. `CLIENT_SECRET` should be set via `wrangler secret put` for production.
+- OAuth scopes are dynamic: `identify email guilds` by default, adds `guilds.members.read` only when `ADMIN_ROLE_ID` is configured
 - Returns JWT id_tokens containing a `discord_user` object with real Discord profile data (id, username, global_name, avatar, discriminator, is_admin)
-- `is_admin` detection is optional — enabled by setting `ADMIN_ROLE_ID` in `worker.js`. When enabled, checks if the user has that role in the configured `ADMIN_GUILD_ID` (defaults to `ALLOWED_GUILDS[0]` if not set) via `GET /users/@me/guilds/{guild_id}/member`. When disabled, `is_admin` is always `false`.
+- JWT issuer is set dynamically from the request origin (not hardcoded)
+- `is_admin` detection is optional — enabled by setting `ADMIN_ROLE_ID` env var. When enabled, checks if the user has that role in the configured `ADMIN_GUILD_ID` (defaults to `ALLOWED_GUILDS[0]` if not set) via `GET /users/@me/guilds/{guild_id}/member`. When disabled, `is_admin` is always `false`.
+- Error handling on all Discord API calls (token exchange, user fetch, guilds fetch, member fetch) with descriptive error responses
+- `GET /health` endpoint returns `{ "status": "ok" }` for uptime monitoring
 - Cloudflare Access is configured with this worker as an OIDC identity provider
 - Claims config in Cloudflare Access: `["id", "preferred_username", "name", "discord_user"]`
 - The `discord_user` claim appears under the `custom` key in the Cloudflare Access identity response (NOT `oidc_fields`)
@@ -449,7 +453,7 @@ When the server "goes offline" after pressing start:
 
 ## Release Pipeline
 
-Both `meduseld` and `meduseld-site` use `commit-and-tag-version` (maintained fork of `standard-version`) for automated releases. `herugrim` uses the same pipeline starting from v1.0.0.
+Both `meduseld` and `meduseld-site` use `commit-and-tag-version` (maintained fork of `standard-version`) for automated releases. `herugrim` uses the same pipeline starting from v0.1.0-alpha.
 
 ### How It Works
 
