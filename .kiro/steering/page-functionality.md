@@ -11,6 +11,7 @@ File: `meduseld-site/index.html`
 Minimal splash page with a "404 Server Not Found" joke theme.
 
 - "Enter the Great Hall" button → navigates to `https://services.meduseld.io`
+- "Looking for Herugrim?" link → navigates to `https://herugrim.meduseld.io`
 - Footer links: quietarcade website, dynamic version badge (fetches latest release tag from GitHub API, links to release page)
 - Copyright year auto-fills via JS
 
