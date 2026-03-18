@@ -352,6 +352,7 @@ Static admin page for managing user roles and account status. Served by Cloudfla
 ### Navigation
 
 - "Back to Services" button → navigates to `https://services.meduseld.io`
+- Profile widget (top-right, inside header nav bar)
 
 ### Users Table
 
@@ -388,7 +389,7 @@ Admin page for managing entertainment and media services. Non-admin users are re
 ### Navigation
 
 - "Back to Services" button → navigates to `https://services.meduseld.io`
-- Profile widget (top-right, fixed position)
+- Profile widget (top-right, inside header nav bar)
 
 ### Service Cards (3-column grid)
 
