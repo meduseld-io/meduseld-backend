@@ -357,7 +357,7 @@ Static admin page for managing user roles and account status. Served by Cloudfla
 
 - Fetches from `GET https://panel.meduseld.io/api/admin/users` with credentials
 - "Refresh" button → re-fetches user list
-- Columns: User (avatar + display name), Discord ID, Role, Services, Session Status, Last Login, Actions
+- Columns: User (avatar + display name), Discord ID, Role, Services, Last Login, Actions
 - Services column shows a purple Jellyfin icon if the user has Jellyfin credentials (`has_jellyfin`), dash otherwise
 - Current user row shows a "You" badge
 - Inactive users shown at 50% opacity
