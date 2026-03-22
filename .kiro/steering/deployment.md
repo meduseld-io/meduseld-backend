@@ -52,6 +52,11 @@ Served via Cloudflare Pages at `/srv/meduseld-site`
   - Centered logo, title, subtitle, and "View on GitHub" link
   - No authentication required
 
+- **status.meduseld.io** (status/index.html)
+  - Server status page shown when the tunnel/server is down
+  - Polls health Worker for live service status
+  - No authentication required
+
 ### meduseld Repository (Flask Backend)
 
 Python Flask application at `/srv/meduseld`
@@ -77,6 +82,17 @@ Python Flask application at `/srv/meduseld`
 - **health.meduseld.io**
   - Public health check endpoint
   - Returns server status without authentication
+
+### Health Worker (Cloudflare Worker)
+
+Cloudflare Worker at `https://meduseld-health.404-41f.workers.dev` that checks the status of all Meduseld services. Used by the services page and admin page to show Online/Offline/Tunnel Down badges.
+
+- First checks tunnel status by fetching `panel.meduseld.io/health` (bypasses Cloudflare Access). If the response is JSON, the tunnel is up. If the response is an HTML error page (e.g., error 1033), the tunnel is down and all services are reported as `tunnel-down`. If the request times out or fails, also reported as tunnel down.
+- If the tunnel is up, performs individual `HEAD` requests to each service URL (`panel.meduseld.io`, `ssh.meduseld.io`, `jellyfin.meduseld.io`) with a 5-second timeout.
+- Returns JSON with per-service status: `online` (green), `offline` (red), `tunnel-down` (orange), `timeout` (orange), `error` (red).
+- CORS: `Access-Control-Allow-Origin: *`, no caching.
+- Important: Worker-to-Worker fetches within Cloudflare's network get intercepted by Cloudflare Access (returns login page as 200 OK), so the tunnel check must use a path that bypasses Access. The `/health` path is configured as a bypass in the Cloudflare Access application for `panel.meduseld.io`.
+- No env vars required.
 
 ### herugrim Repository (Discord OIDC Worker)
 
@@ -255,6 +271,7 @@ After the first admin is set, subsequent admins can be promoted from the admin p
 ### Cloudflare Access Configuration
 
 - All subdomain apps need `options_preflight_bypass: true` to allow CORS preflight requests
+- `panel.meduseld.io/health` is configured as a bypass path in Cloudflare Access so the health Worker can check tunnel status without being intercepted by the Access login page
 - Cross-origin API calls from static pages to `panel.meduseld.io` (e.g. `/api/me`, `/api/sync-identity`) work because the `CF_Authorization` cookie is set on `.meduseld.io` and Cloudflare Access accepts it with `options_preflight_bypass` enabled
 - The Jellyfin auto-login script avoids cross-origin issues by calling `/api/jellyfin-auth` as a same-origin request on `jellyfin.meduseld.io` — the catch-all route handles it server-side
 

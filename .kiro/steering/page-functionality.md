@@ -21,7 +21,7 @@ Minimal splash page with a "404 Server Not Found" joke theme.
 
 File: `meduseld-site/services/index.html`
 
-Central navigation hub. All service cards check live status via a Cloudflare Worker health API at `https://meduseld-health.404-41f.workers.dev`. Status checks run every 5 seconds.
+Central navigation hub. All service cards check live status via a Cloudflare Worker health API at `https://meduseld-health.404-41f.workers.dev`. The worker first checks Cloudflare Tunnel health via the Cloudflare API, then performs individual service checks only if the tunnel is healthy. Status checks run every 5 seconds.
 
 ### Navigation & Global Elements
 
@@ -453,3 +453,20 @@ Each card shows a spinner while checking, then displays Online (green check), De
 - Checks all services on page load via `fetch(/<service>)`
 - Re-checks every 30 seconds
 - "Last updated" timestamp at the bottom
+
+---
+
+## status.meduseld.io — Server Status Page
+
+File: `meduseld-site/status/index.html`
+
+Static page shown to users when the server/tunnel is down. No authentication required (served by Cloudflare Pages independently of the Flask backend).
+
+- Meduseld logo and "The Hall is Quiet" heading with sword emoji
+- Explanation text that the server is currently offline
+- Live status dots for Control Panel, SSH Terminal, and Jellyfin Media — polls the health Worker (`https://meduseld-health.404-41f.workers.dev`) every 15 seconds
+- Status dots: yellow (checking), green (online), red (offline/tunnel-down) with Bootstrap tooltips showing status text
+- "Last checked" timestamp updates on each poll
+- "Back to The Great Hall" button → links to `https://services.meduseld.io`
+- Matches the existing Meduseld dark/gold theme via shared `style.css`
+- Footer with copyright year (auto-filled via JS) and quietarcade link
