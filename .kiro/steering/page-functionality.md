@@ -596,7 +596,7 @@ Weekly game wheel where users spin to randomly select the party game for the wee
 ### Game Pool
 
 - List of all active games in the pool with names and who added them
-- Admins see "Add Game" button → opens modal with name and optional cover image URL fields
+- Admins see "Add Game" button → opens modal with name field and Steam search. Clicking the search icon (or pressing Enter) queries the Steam store API via allorigins proxy, shows up to 5 results with thumbnails. Clicking a result auto-fills the game name and cover image URL with a live preview. Cover image URL can also be pasted manually.
 - Admins see delete buttons (x icon) on each game → confirms then soft-deletes via `DELETE https://health.meduseld.io/check/picker-games-<id>`
 - Games added via `POST https://health.meduseld.io/check/picker-games` with `{name, image_url?, _cf_token}`
 

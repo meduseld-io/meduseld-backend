@@ -4337,13 +4337,34 @@ def check_service(service):
                 logger.error("Failed to save weekly pick: %s", e)
                 return _picker_cors(jsonify({"error": "Spin failed"}), 500)
 
-        # GET /check/picker-history — public
+        # GET /check/picker-history — public, DELETE — admin only (clear all history)
         if service == "picker-history":
             if request.method == "GET":
                 from models import WeeklyPick
 
                 picks = WeeklyPick.query.order_by(WeeklyPick.week_start.desc()).limit(20).all()
                 return _picker_cors(jsonify({"history": [p.to_dict() for p in picks]}), 200)
+
+            if request.method == "DELETE":
+                user = _authenticate_from_cookie()
+                if not user:
+                    return _picker_cors(jsonify({"error": "Authentication required"}), 401)
+                if user.role != "admin":
+                    return _picker_cors(jsonify({"error": "Insufficient permissions"}), 403)
+
+                from models import WeeklyPick
+                from database import db
+
+                try:
+                    count = WeeklyPick.query.delete()
+                    db.session.commit()
+                    logger.info("Admin %s cleared picker history (%d picks)", user.username, count)
+                    return _picker_cors(jsonify({"ok": True, "deleted": count}), 200)
+                except Exception as e:
+                    db.session.rollback()
+                    logger.error("Failed to clear picker history: %s", e)
+                    return _picker_cors(jsonify({"error": "Clear failed"}), 500)
+
             return _picker_cors(jsonify({"error": "Method not allowed"}), 405)
 
         # GET/POST /check/picker-games — list or add games
