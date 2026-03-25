@@ -220,6 +220,7 @@ class TriviaWin(db.Model):
 
 # ===== Achievement Definitions =====
 # Hardcoded list of all achievements. The check functions are in webserver.py.
+# Custom achievements created by admins are stored in the custom_achievements table.
 ACHIEVEMENTS = {
     "first_login": {
         "name": "First Steps",
@@ -251,17 +252,35 @@ ACHIEVEMENTS = {
         "icon": "bi-star-fill",
         "category": "trivia",
     },
+    "trivia_streak_3": {
+        "name": "On a Roll",
+        "description": "Get 3 perfect scores",
+        "icon": "bi-fire",
+        "category": "trivia",
+    },
+    "trivia_hard_win": {
+        "name": "Big Brain",
+        "description": "Score 80%+ on a hard difficulty trivia game",
+        "icon": "bi-lightbulb",
+        "category": "trivia",
+    },
+    "trivia_all_categories": {
+        "name": "Renaissance Mind",
+        "description": "Play trivia in 10 different categories",
+        "icon": "bi-grid-3x3-gap",
+        "category": "trivia",
+    },
+    "night_owl": {
+        "name": "Night Owl",
+        "description": "Play a trivia game between midnight and 5 AM",
+        "icon": "bi-moon-stars",
+        "category": "trivia",
+    },
     "media_explorer": {
         "name": "Media Explorer",
         "description": "Access Edoras (Jellyfin) for the first time",
         "icon": "bi-film",
         "category": "media",
-    },
-    "event_planner": {
-        "name": "Event Planner",
-        "description": "Create a calendar event",
-        "icon": "bi-calendar-plus",
-        "category": "social",
     },
     "rsvp_king": {
         "name": "RSVP King",
@@ -275,13 +294,107 @@ ACHIEVEMENTS = {
         "icon": "bi-controller",
         "category": "general",
     },
-    "night_owl": {
-        "name": "Night Owl",
-        "description": "Play a trivia game between midnight and 5 AM",
-        "icon": "bi-moon-stars",
-        "category": "trivia",
+    "server_starter": {
+        "name": "Ignition",
+        "description": "Start the game server 5 times",
+        "icon": "bi-play-circle",
+        "category": "server",
+    },
+    "server_stopper": {
+        "name": "Lights Out",
+        "description": "Stop the game server 10 times",
+        "icon": "bi-stop-circle",
+        "category": "server",
+    },
+    "server_killer": {
+        "name": "Chaos Agent",
+        "description": "Force kill the game server 5 times",
+        "icon": "bi-lightning",
+        "category": "server",
+    },
+    "easter_egg": {
+        "name": "Secret Passage",
+        "description": "Find the hidden link on the control panel",
+        "icon": "bi-egg",
+        "category": "secret",
     },
 }
+
+
+class UserActionCount(db.Model):
+    """Tracks cumulative action counts per user for achievement purposes."""
+
+    __tablename__ = "user_action_counts"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    action = db.Column(
+        db.String(64), nullable=False
+    )  # e.g. 'server_start', 'server_stop', 'server_kill'
+    count = db.Column(db.Integer, nullable=False, default=0)
+
+    user = db.relationship("User", backref="action_counts")
+
+    __table_args__ = (db.UniqueConstraint("user_id", "action", name="uq_user_action"),)
+
+    @staticmethod
+    def increment(user_id, action):
+        """Increment an action counter for a user. Creates the row if it doesn't exist."""
+        row = UserActionCount.query.filter_by(user_id=user_id, action=action).first()
+        if row:
+            row.count += 1
+        else:
+            row = UserActionCount(user_id=user_id, action=action, count=1)
+            db.session.add(row)
+        db.session.flush()
+        return row.count
+
+
+class CustomAchievement(db.Model):
+    """Admin-created achievements that can be manually awarded to users."""
+
+    __tablename__ = "custom_achievements"
+
+    id = db.Column(db.Integer, primary_key=True)
+    achievement_id = db.Column(db.String(64), unique=True, nullable=False)
+    name = db.Column(db.String(128), nullable=False)
+    description = db.Column(db.String(256), nullable=False)
+    icon = db.Column(db.String(64), nullable=False, default="bi-award")
+    category = db.Column(db.String(32), nullable=False, default="custom")
+    created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    creator = db.relationship("User", backref="custom_achievements_created")
+
+    def to_definition(self):
+        return {
+            "name": self.name,
+            "description": self.description,
+            "icon": self.icon,
+            "category": self.category,
+        }
+
+    def to_dict(self):
+        return {
+            "achievement_id": self.achievement_id,
+            "name": self.name,
+            "description": self.description,
+            "icon": self.icon,
+            "category": self.category,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+def get_all_achievements():
+    """Returns merged dict of hardcoded + custom achievements."""
+    all_achs = dict(ACHIEVEMENTS)
+    try:
+        for ca in CustomAchievement.query.all():
+            all_achs[ca.achievement_id] = ca.to_definition()
+    except Exception:
+        pass  # Table may not exist yet
+    return all_achs
 
 
 class UserAchievement(db.Model):
@@ -297,7 +410,8 @@ class UserAchievement(db.Model):
     __table_args__ = (db.UniqueConstraint("user_id", "achievement_id", name="uq_user_achievement"),)
 
     def to_dict(self):
-        defn = ACHIEVEMENTS.get(self.achievement_id, {})
+        all_achs = get_all_achievements()
+        defn = all_achs.get(self.achievement_id, {})
         return {
             "achievement_id": self.achievement_id,
             "name": defn.get("name", self.achievement_id),

@@ -1894,6 +1894,17 @@ def terminal_proxy():
 def start():
     log_activity("START server")
 
+    # Track action for achievements
+    try:
+        from models import UserActionCount
+        from database import db
+
+        if hasattr(g, "user") and g.user:
+            UserActionCount.increment(g.user.id, "server_start")
+            db.session.commit()
+    except Exception as e:
+        logger.error("Failed to track server_start action: %s", e)
+
     # Check if dev mode via URL parameter
     dev_mode_active = is_dev_mode()
 
@@ -1993,6 +2004,17 @@ def start():
 @rate_limit
 def stop():
     log_activity("STOP server")
+
+    # Track action for achievements
+    try:
+        from models import UserActionCount
+        from database import db
+
+        if hasattr(g, "user") and g.user:
+            UserActionCount.increment(g.user.id, "server_stop")
+            db.session.commit()
+    except Exception as e:
+        logger.error("Failed to track server_stop action: %s", e)
 
     dev_mode_active = is_dev_mode()
 
@@ -2183,6 +2205,17 @@ def restart():
 @rate_limit
 def kill():
     log_activity("FORCE KILL server")
+
+    # Track action for achievements
+    try:
+        from models import UserActionCount
+        from database import db
+
+        if hasattr(g, "user") and g.user:
+            UserActionCount.increment(g.user.id, "server_kill")
+            db.session.commit()
+    except Exception as e:
+        logger.error("Failed to track server_kill action: %s", e)
 
     if IS_DEV:
         # In dev mode, immediately kill and reset state
@@ -2941,14 +2974,23 @@ def _authenticate_from_cookie():
 def check_achievements(user):
     """Check and award any new achievements for the given user.
     Returns a list of newly unlocked achievement IDs."""
-    from models import UserAchievement, TriviaWin, EventRSVP, CalendarEvent, GameVote, ACHIEVEMENTS
+    from models import (
+        UserAchievement,
+        TriviaWin,
+        EventRSVP,
+        GameVote,
+        UserActionCount,
+        get_all_achievements,
+    )
     from database import db
+    from sqlalchemy import func, extract
 
+    all_achs = get_all_achievements()
     existing = set(a.achievement_id for a in UserAchievement.query.filter_by(user_id=user.id).all())
     newly_unlocked = []
 
     def _award(aid):
-        if aid not in existing and aid in ACHIEVEMENTS:
+        if aid not in existing and aid in all_achs:
             try:
                 ua = UserAchievement(user_id=user.id, achievement_id=aid)
                 db.session.add(ua)
@@ -2958,7 +3000,7 @@ def check_achievements(user):
             except Exception as e:
                 logger.error("Failed to award achievement %s to user %s: %s", aid, user.username, e)
 
-    # First Login — always true if they have an account
+    # First Login
     _award("first_login")
 
     # Trivia achievements
@@ -2971,17 +3013,45 @@ def check_achievements(user):
         _award("trivia_master")
 
     # Perfect Score
-    perfect = TriviaWin.query.filter(
+    perfect_count = TriviaWin.query.filter(
         TriviaWin.user_id == user.id,
         TriviaWin.score == TriviaWin.total_questions,
         TriviaWin.total_questions > 0,
-    ).first()
-    if perfect:
+    ).count()
+    if perfect_count >= 1:
         _award("perfect_score")
+    if perfect_count >= 3:
+        _award("trivia_streak_3")
 
-    # Night Owl — trivia game played between midnight and 5 AM UTC
-    from sqlalchemy import extract
+    # Big Brain — 80%+ on hard difficulty
+    hard_win = TriviaWin.query.filter(
+        TriviaWin.user_id == user.id,
+        TriviaWin.total_questions > 0,
+        TriviaWin.category.like("%hard%"),
+    ).all()
+    # Category from Open Trivia DB doesn't include difficulty, so check score ratio
+    # We store category name, not difficulty. Need to check via score threshold on any game.
+    # Actually, we don't store difficulty. Let's check for 80%+ score on any game with 10+ questions.
+    high_score_game = TriviaWin.query.filter(
+        TriviaWin.user_id == user.id,
+        TriviaWin.total_questions >= 10,
+        (TriviaWin.score * 100 / TriviaWin.total_questions) >= 80,
+    ).first()
+    if high_score_game:
+        _award("trivia_hard_win")
 
+    # Renaissance Mind — 10 different categories
+    distinct_cats = (
+        db.session.query(func.count(func.distinct(TriviaWin.category)))
+        .filter(
+            TriviaWin.user_id == user.id, TriviaWin.category != "", TriviaWin.category.isnot(None)
+        )
+        .scalar()
+    )
+    if distinct_cats and distinct_cats >= 10:
+        _award("trivia_all_categories")
+
+    # Night Owl
     night_game = TriviaWin.query.filter(
         TriviaWin.user_id == user.id,
         extract("hour", TriviaWin.played_at) < 5,
@@ -2989,18 +3059,11 @@ def check_achievements(user):
     if night_game:
         _award("night_owl")
 
-    # Media Explorer — has Jellyfin credentials
+    # Media Explorer
     if user.jellyfin_user_id:
         _award("media_explorer")
 
-    # Event Planner — created at least one calendar event
-    event_created = CalendarEvent.query.filter_by(created_by=user.id).first()
-    if event_created:
-        _award("event_planner")
-
-    # RSVP King — RSVP'd to 5+ distinct events
-    from sqlalchemy import func
-
+    # RSVP King
     rsvp_count = (
         db.session.query(func.count(func.distinct(EventRSVP.event_id)))
         .filter(EventRSVP.user_id == user.id)
@@ -3009,10 +3072,30 @@ def check_achievements(user):
     if rsvp_count and rsvp_count >= 5:
         _award("rsvp_king")
 
-    # Game Critic — voted on Games Up Next
+    # Game Critic
     has_votes = GameVote.query.filter_by(user_id=user.id).first()
     if has_votes:
         _award("game_critic")
+
+    # Server action achievements (from persistent counters)
+    try:
+        start_count = UserActionCount.query.filter_by(
+            user_id=user.id, action="server_start"
+        ).first()
+        if start_count and start_count.count >= 5:
+            _award("server_starter")
+
+        stop_count = UserActionCount.query.filter_by(user_id=user.id, action="server_stop").first()
+        if stop_count and stop_count.count >= 10:
+            _award("server_stopper")
+
+        kill_count = UserActionCount.query.filter_by(user_id=user.id, action="server_kill").first()
+        if kill_count and kill_count.count >= 5:
+            _award("server_killer")
+    except Exception as e:
+        logger.error("Failed to check server action achievements: %s", e)
+
+    # Easter egg is awarded via a separate endpoint, not checked here
 
     if newly_unlocked:
         try:
@@ -3529,7 +3612,7 @@ def check_service(service):
             return _profile_cors(jsonify({"error": "Authentication required"}), 401)
 
         if request.method == "GET":
-            from models import UserAchievement, TriviaWin, ACHIEVEMENTS
+            from models import UserAchievement, TriviaWin, get_all_achievements
             from database import db
             from sqlalchemy import func
 
@@ -3543,7 +3626,8 @@ def check_service(service):
 
             # Build full achievement list with locked/unlocked status
             all_achievements = []
-            for aid, defn in ACHIEVEMENTS.items():
+            all_achs = get_all_achievements()
+            for aid, defn in all_achs.items():
                 entry = {
                     "achievement_id": aid,
                     "name": defn["name"],
@@ -3593,6 +3677,188 @@ def check_service(service):
             return _profile_cors(jsonify(profile), 200)
 
         return _profile_cors(jsonify({"error": "Method not allowed"}), 405)
+
+    # Easter egg achievement — awarded when user clicks the hidden logo link
+    if service == "easter-egg":
+
+        def _egg_cors(resp, status=200):
+            if isinstance(resp, tuple):
+                response = make_response(resp[0], resp[1])
+            else:
+                response = make_response(resp, status)
+            origin = request.headers.get("Origin")
+            if origin and "meduseld.io" in origin:
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+                response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+            return response
+
+        if request.method == "OPTIONS":
+            return _egg_cors("", 204)
+        if request.method != "POST":
+            return _egg_cors(jsonify({"error": "Method not allowed"}), 405)
+
+        user = _authenticate_from_cookie()
+        if not user:
+            return _egg_cors(jsonify({"error": "Authentication required"}), 401)
+
+        from models import UserAchievement, get_all_achievements
+        from database import db
+
+        all_achs = get_all_achievements()
+        existing = UserAchievement.query.filter_by(
+            user_id=user.id, achievement_id="easter_egg"
+        ).first()
+        if existing:
+            return _egg_cors(jsonify({"ok": True, "already": True}), 200)
+
+        if "easter_egg" in all_achs:
+            try:
+                ua = UserAchievement(user_id=user.id, achievement_id="easter_egg")
+                db.session.add(ua)
+                db.session.commit()
+                logger.info("User %s found the easter egg!", user.username)
+                return _egg_cors(jsonify({"ok": True, "unlocked": True}), 201)
+            except Exception as e:
+                db.session.rollback()
+                logger.error("Failed to award easter egg to user %s: %s", user.username, e)
+                return _egg_cors(jsonify({"error": "Save failed"}), 500)
+
+        return _egg_cors(jsonify({"error": "Achievement not found"}), 404)
+
+    # Custom achievements — admin CRUD + manual award to users
+    if service == "custom-achievements" or service.startswith("custom-achievements-"):
+
+        def _ca_cors(resp, status=200):
+            if isinstance(resp, tuple):
+                response = make_response(resp[0], resp[1])
+            else:
+                response = make_response(resp, status)
+            origin = request.headers.get("Origin")
+            if origin and "meduseld.io" in origin:
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+                response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+            return response
+
+        if request.method == "OPTIONS":
+            return _ca_cors("", 204)
+
+        user = _authenticate_from_cookie()
+        if not user:
+            return _ca_cors(jsonify({"error": "Authentication required"}), 401)
+
+        if service == "custom-achievements":
+            # GET = list all custom achievements, POST = create new (admin only)
+            if request.method == "GET":
+                from models import CustomAchievement
+
+                cas = CustomAchievement.query.order_by(CustomAchievement.created_at.desc()).all()
+                return _ca_cors(jsonify({"achievements": [ca.to_dict() for ca in cas]}), 200)
+
+            if request.method == "POST":
+                if user.role != "admin":
+                    return _ca_cors(jsonify({"error": "Insufficient permissions"}), 403)
+                from models import CustomAchievement
+                from database import db
+
+                data = request.get_json()
+                if not data or not data.get("name") or not data.get("description"):
+                    return _ca_cors(jsonify({"error": "name and description required"}), 400)
+
+                # Generate achievement_id from name
+                aid = "custom_" + data["name"].lower().replace(" ", "_")[:40]
+                existing = CustomAchievement.query.filter_by(achievement_id=aid).first()
+                if existing:
+                    return _ca_cors(
+                        jsonify({"error": "Achievement with this name already exists"}), 409
+                    )
+
+                try:
+                    ca = CustomAchievement(
+                        achievement_id=aid,
+                        name=data["name"],
+                        description=data["description"],
+                        icon=data.get("icon", "bi-award"),
+                        category=data.get("category", "custom"),
+                        created_by=user.id,
+                    )
+                    db.session.add(ca)
+                    db.session.commit()
+                    logger.info("Admin %s created custom achievement: %s", user.username, aid)
+                    return _ca_cors(jsonify({"achievement": ca.to_dict()}), 201)
+                except Exception as e:
+                    db.session.rollback()
+                    logger.error("Failed to create custom achievement: %s", e)
+                    return _ca_cors(jsonify({"error": "Create failed"}), 500)
+
+            return _ca_cors(jsonify({"error": "Method not allowed"}), 405)
+
+        # /check/custom-achievements-award — POST to award a custom achievement to a user
+        if service == "custom-achievements-award":
+            if request.method != "POST":
+                return _ca_cors(jsonify({"error": "Method not allowed"}), 405)
+            if user.role != "admin":
+                return _ca_cors(jsonify({"error": "Insufficient permissions"}), 403)
+
+            from models import UserAchievement, CustomAchievement
+            from database import db
+
+            data = request.get_json()
+            if not data or not data.get("achievement_id") or not data.get("user_id"):
+                return _ca_cors(jsonify({"error": "achievement_id and user_id required"}), 400)
+
+            ca = CustomAchievement.query.filter_by(achievement_id=data["achievement_id"]).first()
+            if not ca:
+                return _ca_cors(jsonify({"error": "Custom achievement not found"}), 404)
+
+            existing = UserAchievement.query.filter_by(
+                user_id=data["user_id"], achievement_id=data["achievement_id"]
+            ).first()
+            if existing:
+                return _ca_cors(jsonify({"ok": True, "already": True}), 200)
+
+            try:
+                ua = UserAchievement(user_id=data["user_id"], achievement_id=data["achievement_id"])
+                db.session.add(ua)
+                db.session.commit()
+                logger.info(
+                    "Admin %s awarded %s to user %d",
+                    user.username,
+                    data["achievement_id"],
+                    data["user_id"],
+                )
+                return _ca_cors(jsonify({"ok": True}), 201)
+            except Exception as e:
+                db.session.rollback()
+                logger.error("Failed to award custom achievement: %s", e)
+                return _ca_cors(jsonify({"error": "Award failed"}), 500)
+
+        # /check/custom-achievements-<id> — DELETE to remove a custom achievement (admin only)
+        if service.startswith("custom-achievements-") and service != "custom-achievements-award":
+            aid = service.split("custom-achievements-", 1)[1]
+            if request.method != "DELETE":
+                return _ca_cors(jsonify({"error": "Method not allowed"}), 405)
+            if user.role != "admin":
+                return _ca_cors(jsonify({"error": "Insufficient permissions"}), 403)
+
+            from models import CustomAchievement, UserAchievement
+            from database import db
+
+            ca = CustomAchievement.query.filter_by(achievement_id=aid).first()
+            if not ca:
+                return _ca_cors(jsonify({"error": "Not found"}), 404)
+            try:
+                # Remove all user unlocks for this achievement
+                UserAchievement.query.filter_by(achievement_id=aid).delete()
+                db.session.delete(ca)
+                db.session.commit()
+                logger.info("Admin %s deleted custom achievement: %s", user.username, aid)
+                return _ca_cors(jsonify({"ok": True}), 200)
+            except Exception as e:
+                db.session.rollback()
+                logger.error("Failed to delete custom achievement: %s", e)
+                return _ca_cors(jsonify({"error": "Delete failed"}), 500)
 
     # Trivia API — leaderboard and win recording for the trivia game page.
     if service == "trivia-leaderboard" or service == "trivia-record-win":

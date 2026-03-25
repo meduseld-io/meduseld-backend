@@ -48,6 +48,19 @@
     rel="noopener noreferrer"
     href="https://www.youtube.com/watch?v=7lwJOxN_gXc&t=48s"
     class="rohan-logo-wrapper mb-3"
+    onclick="
+      (function () {
+        fetch('https://health.meduseld.io/check/easter-egg', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            _cf_token: (document.cookie.match(/(?:^|; )CF_Authorization=([^;]*)/) || [])[1] || '',
+          }),
+        }).catch(function (e) {
+          console.error('Easter egg request failed:', e);
+        });
+      })()
+    "
   >
     <img src="{{ url_for('static', filename='meduseldminimal.png') }}" class="rohan-logo" />
   </a>
