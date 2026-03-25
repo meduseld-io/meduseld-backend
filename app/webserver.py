@@ -2938,6 +2938,94 @@ def _authenticate_from_cookie():
         return None
 
 
+def check_achievements(user):
+    """Check and award any new achievements for the given user.
+    Returns a list of newly unlocked achievement IDs."""
+    from models import UserAchievement, TriviaWin, EventRSVP, CalendarEvent, GameVote, ACHIEVEMENTS
+    from database import db
+
+    existing = set(a.achievement_id for a in UserAchievement.query.filter_by(user_id=user.id).all())
+    newly_unlocked = []
+
+    def _award(aid):
+        if aid not in existing and aid in ACHIEVEMENTS:
+            try:
+                ua = UserAchievement(user_id=user.id, achievement_id=aid)
+                db.session.add(ua)
+                db.session.flush()
+                newly_unlocked.append(aid)
+                existing.add(aid)
+            except Exception as e:
+                logger.error("Failed to award achievement %s to user %s: %s", aid, user.username, e)
+
+    # First Login — always true if they have an account
+    _award("first_login")
+
+    # Trivia achievements
+    trivia_count = TriviaWin.query.filter_by(user_id=user.id).count()
+    if trivia_count >= 1:
+        _award("trivia_rookie")
+    if trivia_count >= 10:
+        _award("trivia_veteran")
+    if trivia_count >= 50:
+        _award("trivia_master")
+
+    # Perfect Score
+    perfect = TriviaWin.query.filter(
+        TriviaWin.user_id == user.id,
+        TriviaWin.score == TriviaWin.total_questions,
+        TriviaWin.total_questions > 0,
+    ).first()
+    if perfect:
+        _award("perfect_score")
+
+    # Night Owl — trivia game played between midnight and 5 AM UTC
+    from sqlalchemy import extract
+
+    night_game = TriviaWin.query.filter(
+        TriviaWin.user_id == user.id,
+        extract("hour", TriviaWin.played_at) < 5,
+    ).first()
+    if night_game:
+        _award("night_owl")
+
+    # Media Explorer — has Jellyfin credentials
+    if user.jellyfin_user_id:
+        _award("media_explorer")
+
+    # Event Planner — created at least one calendar event
+    event_created = CalendarEvent.query.filter_by(created_by=user.id).first()
+    if event_created:
+        _award("event_planner")
+
+    # RSVP King — RSVP'd to 5+ distinct events
+    from sqlalchemy import func
+
+    rsvp_count = (
+        db.session.query(func.count(func.distinct(EventRSVP.event_id)))
+        .filter(EventRSVP.user_id == user.id)
+        .scalar()
+    )
+    if rsvp_count and rsvp_count >= 5:
+        _award("rsvp_king")
+
+    # Game Critic — voted on Games Up Next
+    has_votes = GameVote.query.filter_by(user_id=user.id).first()
+    if has_votes:
+        _award("game_critic")
+
+    if newly_unlocked:
+        try:
+            db.session.commit()
+            logger.info("User %s unlocked achievements: %s", user.username, newly_unlocked)
+        except Exception as e:
+            db.session.rollback()
+            logger.error("Failed to commit achievements for user %s: %s", user.username, e)
+            newly_unlocked = []
+
+    return newly_unlocked
+
+
 def _proxy_microservice(url):
     """Proxy a request to a local microservice and return its response."""
     try:
@@ -3415,6 +3503,96 @@ def check_service(service):
                 return _vote_cors(jsonify({"error": "Save failed"}), 500)
 
         return _vote_cors(jsonify({"error": "Method not allowed"}), 405)
+
+    # Profile & Achievements API — returns user profile data with achievements.
+    # GET /check/profile returns the authenticated user's profile + achievements.
+    # Runs achievement checks on each call to award any newly earned ones.
+    if service == "profile":
+
+        def _profile_cors(resp, status=200):
+            if isinstance(resp, tuple):
+                response = make_response(resp[0], resp[1])
+            else:
+                response = make_response(resp, status)
+            origin = request.headers.get("Origin")
+            if origin and "meduseld.io" in origin:
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+                response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+            return response
+
+        if request.method == "OPTIONS":
+            return _profile_cors("", 204)
+
+        user = _authenticate_from_cookie()
+        if not user:
+            return _profile_cors(jsonify({"error": "Authentication required"}), 401)
+
+        if request.method == "GET":
+            from models import UserAchievement, TriviaWin, ACHIEVEMENTS
+            from database import db
+            from sqlalchemy import func
+
+            # Run achievement checks (awards any new ones)
+            new_achievements = check_achievements(user)
+
+            # Get all unlocked achievements
+            unlocked = UserAchievement.query.filter_by(user_id=user.id).all()
+            unlocked_list = [a.to_dict() for a in unlocked]
+            unlocked_ids = set(a.achievement_id for a in unlocked)
+
+            # Build full achievement list with locked/unlocked status
+            all_achievements = []
+            for aid, defn in ACHIEVEMENTS.items():
+                entry = {
+                    "achievement_id": aid,
+                    "name": defn["name"],
+                    "description": defn["description"],
+                    "icon": defn["icon"],
+                    "category": defn["category"],
+                    "unlocked": aid in unlocked_ids,
+                }
+                # Add unlock date if unlocked
+                for ua in unlocked:
+                    if ua.achievement_id == aid:
+                        entry["unlocked_at"] = (
+                            ua.unlocked_at.isoformat() if ua.unlocked_at else None
+                        )
+                        break
+                all_achievements.append(entry)
+
+            # Trivia stats summary
+            trivia_stats = {}
+            trivia_rows = (
+                db.session.query(
+                    func.count(TriviaWin.id).label("games_played"),
+                    func.sum(TriviaWin.score).label("total_correct"),
+                    func.sum(TriviaWin.total_questions).label("total_questions"),
+                    func.max(TriviaWin.score).label("best_score"),
+                )
+                .filter(TriviaWin.user_id == user.id)
+                .first()
+            )
+            if trivia_rows and trivia_rows.games_played:
+                total_q = trivia_rows.total_questions or 0
+                total_c = trivia_rows.total_correct or 0
+                trivia_stats = {
+                    "games_played": trivia_rows.games_played,
+                    "total_correct": total_c,
+                    "total_wrong": total_q - total_c,
+                    "total_questions": total_q,
+                    "best_score": trivia_rows.best_score or 0,
+                    "accuracy": round((total_c / total_q) * 100, 1) if total_q else 0,
+                }
+
+            profile = user.to_dict()
+            profile["achievements"] = all_achievements
+            profile["trivia"] = trivia_stats
+            profile["new_achievements"] = new_achievements
+
+            return _profile_cors(jsonify(profile), 200)
+
+        return _profile_cors(jsonify({"error": "Method not allowed"}), 405)
 
     # Trivia API — leaderboard and win recording for the trivia game page.
     if service == "trivia-leaderboard" or service == "trivia-record-win":

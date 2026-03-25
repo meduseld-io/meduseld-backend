@@ -216,3 +216,93 @@ class TriviaWin(db.Model):
             "category": self.category,
             "played_at": self.played_at.isoformat() if self.played_at else None,
         }
+
+
+# ===== Achievement Definitions =====
+# Hardcoded list of all achievements. The check functions are in webserver.py.
+ACHIEVEMENTS = {
+    "first_login": {
+        "name": "First Steps",
+        "description": "Log in to Meduseld for the first time",
+        "icon": "bi-door-open",
+        "category": "general",
+    },
+    "trivia_rookie": {
+        "name": "Trivia Rookie",
+        "description": "Complete your first trivia game",
+        "icon": "bi-question-circle",
+        "category": "trivia",
+    },
+    "trivia_veteran": {
+        "name": "Trivia Veteran",
+        "description": "Complete 10 trivia games",
+        "icon": "bi-mortarboard",
+        "category": "trivia",
+    },
+    "trivia_master": {
+        "name": "Trivia Master",
+        "description": "Complete 50 trivia games",
+        "icon": "bi-trophy",
+        "category": "trivia",
+    },
+    "perfect_score": {
+        "name": "Perfect Score",
+        "description": "Get 100% on a trivia game",
+        "icon": "bi-star-fill",
+        "category": "trivia",
+    },
+    "media_explorer": {
+        "name": "Media Explorer",
+        "description": "Access Edoras (Jellyfin) for the first time",
+        "icon": "bi-film",
+        "category": "media",
+    },
+    "event_planner": {
+        "name": "Event Planner",
+        "description": "Create a calendar event",
+        "icon": "bi-calendar-plus",
+        "category": "social",
+    },
+    "rsvp_king": {
+        "name": "RSVP King",
+        "description": "RSVP to 5 different events",
+        "icon": "bi-hand-thumbs-up",
+        "category": "social",
+    },
+    "game_critic": {
+        "name": "Game Critic",
+        "description": "Vote on the Games Up Next list",
+        "icon": "bi-controller",
+        "category": "general",
+    },
+    "night_owl": {
+        "name": "Night Owl",
+        "description": "Play a trivia game between midnight and 5 AM",
+        "icon": "bi-moon-stars",
+        "category": "trivia",
+    },
+}
+
+
+class UserAchievement(db.Model):
+    __tablename__ = "user_achievements"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    achievement_id = db.Column(db.String(64), nullable=False)
+    unlocked_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    user = db.relationship("User", backref="achievements")
+
+    __table_args__ = (db.UniqueConstraint("user_id", "achievement_id", name="uq_user_achievement"),)
+
+    def to_dict(self):
+        defn = ACHIEVEMENTS.get(self.achievement_id, {})
+        return {
+            "achievement_id": self.achievement_id,
+            "name": defn.get("name", self.achievement_id),
+            "description": defn.get("description", ""),
+            "icon": defn.get("icon", "bi-award"),
+            "category": defn.get("category", "general"),
+            "unlocked_at": self.unlocked_at.isoformat() if self.unlocked_at else None,
+        }
