@@ -140,6 +140,12 @@ from database import init_db
 
 init_db(app)
 
+# ================= SOCKETIO (Trivia Multiplayer) =================
+from trivia_ws import socketio, register_trivia_rest
+
+socketio.init_app(app)
+register_trivia_rest(app)
+
 # ================= LOGGING =================
 
 # Ensure log directory exists
@@ -3874,6 +3880,37 @@ def check_service(service):
                 logger.error("Failed to delete custom achievement: %s", e)
                 return _ca_cors(jsonify({"error": "Delete failed"}), 500)
 
+    # Trivia lobbies API — list active multiplayer lobbies
+    if service == "trivia-lobbies":
+
+        def _tl_cors(resp, status=200):
+            if isinstance(resp, tuple):
+                response = make_response(resp[0], resp[1])
+            else:
+                response = make_response(resp, status)
+            origin = request.headers.get("Origin")
+            if origin and "meduseld.io" in origin:
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+                response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+            return response
+
+        if request.method == "OPTIONS":
+            return _tl_cors("", 204)
+
+        if request.method == "GET":
+            from trivia_ws import lobby_games
+
+            active = []
+            for code, lobby in lobby_games.items():
+                if lobby.status == "waiting":
+                    info = lobby.to_dict()
+                    info["player_count"] = lobby.player_count()
+                    active.append(info)
+            return _tl_cors(jsonify({"lobbies": active}), 200)
+
+        return _tl_cors(jsonify({"error": "Method not allowed"}), 405)
+
     # Trivia API — leaderboard and win recording for the trivia game page.
     if service == "trivia-leaderboard" or service == "trivia-record-win":
 
@@ -4355,4 +4392,4 @@ initialize()
 # ================= RUN =================
 
 if __name__ == "__main__":
-    app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG)
+    socketio.run(app, host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG)

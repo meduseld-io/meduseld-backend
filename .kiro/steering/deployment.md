@@ -189,6 +189,94 @@ Table: `event_rsvps`
 
 Unique constraint: `(event_id, user_id)` — one RSVP per user per event.
 
+### GameVote Model (`app/models.py`)
+
+Table: `game_votes`
+
+| Column      | Type       | Notes                                 |
+| ----------- | ---------- | ------------------------------------- |
+| id          | Integer    | Primary key                           |
+| user_id     | Integer    | FK to `users.id`                      |
+| game_app_id | String(32) | Steam app ID of the game              |
+| rank        | Integer    | User's preference rank (1 = top pick) |
+| updated_at  | DateTime   | UTC, auto-set on creation/update      |
+
+Unique constraint: `(user_id, game_app_id)` — one vote per user per game. Scoring uses Borda count: rank 1 = N points (N = total games), rank 2 = N-1, etc.
+
+### GameListEntry Model (`app/models.py`)
+
+Table: `game_list_entries`
+
+| Column     | Type        | Notes                                       |
+| ---------- | ----------- | ------------------------------------------- |
+| id         | Integer     | Primary key                                 |
+| app_id     | String(32)  | Steam app ID, unique                        |
+| name       | String(256) | Game display name                           |
+| url        | String(512) | Steam store URL (auto-generated if omitted) |
+| tooltip    | String(512) | Optional note/tooltip text                  |
+| added_by   | Integer     | FK to `users.id`                            |
+| created_at | DateTime    | UTC, auto-set on creation                   |
+
+### TriviaWin Model (`app/models.py`)
+
+Table: `trivia_wins`
+
+| Column          | Type        | Notes                                        |
+| --------------- | ----------- | -------------------------------------------- |
+| id              | Integer     | Primary key                                  |
+| user_id         | Integer     | FK to `users.id`                             |
+| score           | Integer     | Number of correct answers                    |
+| total_questions | Integer     | Total questions in the game                  |
+| category        | String(128) | Category name from Open Trivia DB (optional) |
+| played_at       | DateTime    | UTC, auto-set on creation                    |
+
+No unique constraint — multiple wins per user are expected (one row per completed game).
+
+### UserAchievement Model (`app/models.py`)
+
+Table: `user_achievements`
+
+| Column         | Type       | Notes                      |
+| -------------- | ---------- | -------------------------- |
+| id             | Integer    | Primary key                |
+| user_id        | Integer    | FK to `users.id`           |
+| achievement_id | String(64) | Key from ACHIEVEMENTS dict |
+| unlocked_at    | DateTime   | UTC, auto-set on creation  |
+
+Unique constraint: `(user_id, achievement_id)` — one unlock per user per achievement.
+
+Achievement definitions are hardcoded in `ACHIEVEMENTS` dict in `models.py` (not stored in DB). Custom achievements created by admins are stored in the `custom_achievements` table. `get_all_achievements()` merges both sources. The `check_achievements(user)` function in `webserver.py` evaluates all criteria and awards new ones. Called each time a user visits their profile page.
+
+### UserActionCount Model (`app/models.py`)
+
+Table: `user_action_counts`
+
+| Column  | Type       | Notes                                                          |
+| ------- | ---------- | -------------------------------------------------------------- |
+| id      | Integer    | Primary key                                                    |
+| user_id | Integer    | FK to `users.id`                                               |
+| action  | String(64) | Action key (e.g. `server_start`, `server_stop`, `server_kill`) |
+| count   | Integer    | Cumulative count, default 0                                    |
+
+Unique constraint: `(user_id, action)` — one counter per user per action. Incremented via `UserActionCount.increment(user_id, action)` in the server start/stop/kill handlers.
+
+### CustomAchievement Model (`app/models.py`)
+
+Table: `custom_achievements`
+
+| Column         | Type        | Notes                                    |
+| -------------- | ----------- | ---------------------------------------- |
+| id             | Integer     | Primary key                              |
+| achievement_id | String(64)  | Unique, auto-generated from name         |
+| name           | String(128) | Display name                             |
+| description    | String(256) | Description text                         |
+| icon           | String(64)  | Bootstrap icon class, default `bi-award` |
+| category       | String(32)  | Category, default `custom`               |
+| created_by     | Integer     | FK to `users.id`                         |
+| created_at     | DateTime    | UTC, auto-set on creation                |
+
+Admin-created achievements. Merged with hardcoded `ACHIEVEMENTS` via `get_all_achievements()`. Can be manually awarded to users via the `/check/custom-achievements-award` endpoint.
+
 ### Database Commands
 
 ```bash
@@ -401,7 +489,7 @@ Three lightweight Python HTTP servers run independently of the Flask app so the 
    - Triggers `meduseld-backup.service` via systemd
    - Env: `BACKUP_SECRET`
 
-Flask proxy routing (`check_service()` in `webserver.py`): requests to `health.meduseld.io/check/stats` → `127.0.0.1:5004/stats`, `/check/history` → `127.0.0.1:5004/history`, `/check/backup` → `127.0.0.1:5003/backup`, `/check/backup-status` → `127.0.0.1:5003/status`, `/check/reboot` → `127.0.0.1:5002/reboot`, `/check/system-logs` → Flask's own `api_server_logs()`, `/check/media-auth` → Jellyfin SSO auth (authenticated, calls `_jellyfin_auth_inner()` to auto-provision and authenticate a Jellyfin account, returns `{token, user_id, server_id}`), `/check/team-roster` → admin users list (authenticated via CF_Authorization JWT passed as `cf_token` query param or `_cf_token` in body), `/check/team-roster-<id>` → admin user update (PUT), `/check/calendar` → calendar events list (GET) and create (POST, admin only), `/check/calendar-<id>` → delete calendar event (DELETE, admin only) or edit calendar event (PUT with `title`/`event_date`, admin only) or RSVP (PUT with `status`, any authenticated user). All authenticated endpoints use `_authenticate_from_cookie()` which reads the CF_Authorization JWT from cookie, header, `cf_token` query param, or `_cf_token` in JSON body.
+Flask proxy routing (`check_service()` in `webserver.py`): requests to `health.meduseld.io/check/stats` → `127.0.0.1:5004/stats`, `/check/history` → `127.0.0.1:5004/history`, `/check/backup` → `127.0.0.1:5003/backup`, `/check/backup-status` → `127.0.0.1:5003/status`, `/check/reboot` → `127.0.0.1:5002/reboot`, `/check/system-logs` → Flask's own `api_server_logs()`, `/check/media-auth` → Jellyfin SSO auth (authenticated, calls `_jellyfin_auth_inner()` to auto-provision and authenticate a Jellyfin account, returns `{token, user_id, server_id}`), `/check/team-roster` → admin users list with trivia stats (authenticated via CF_Authorization JWT passed as `cf_token` query param or `_cf_token` in body; each user includes a `trivia` object with `games_played`, `total_correct`, `total_wrong`, `total_questions`, `best_score`, `accuracy`), `/check/team-roster-<id>` → admin user update (PUT), `/check/calendar` → calendar events list (GET) and create (POST, admin only), `/check/calendar-<id>` → delete calendar event (DELETE, admin only) or edit calendar event (PUT with `title`/`event_date`, admin only) or RSVP (PUT with `status`, any authenticated user), `/check/game-votes` → game voting (GET returns aggregated scores + user's rankings, PUT submits user's ranked list), `/check/games` → games list (GET returns all games, POST adds a game — authenticated), `/check/games-<app_id>` → delete game (DELETE, admin only — also removes associated votes), `/check/trivia-leaderboard` → trivia leaderboard (GET, public — returns aggregated wins per user sorted by win count), `/check/trivia-record-win` → record a trivia game result (POST, authenticated — body: `{score, total_questions, category?, _cf_token}`), `/check/profile` → user profile with achievements and trivia stats (GET, authenticated — runs achievement checks and returns full profile data with all achievements and their locked/unlocked status). All authenticated endpoints use `_authenticate_from_cookie()` which reads the CF_Authorization JWT from cookie, header, `cf_token` query param, or `_cf_token` in JSON body.
 
 ### Common Issues
 
@@ -461,6 +549,23 @@ When the server "goes offline" after pressing start:
 - `POST /api/calendar/events` - (Admin only) Create a new calendar event. Body: `{title, event_date, description?}`
 - `PUT /api/calendar/events/<id>` - (Admin only) Edit a calendar event. Body: `{title?, event_date?, description?}`. If `title` or `event_date` is present, treated as an edit (admin required). Otherwise falls through to RSVP handling.
 - `DELETE /api/calendar/events/<id>` - (Admin only) Delete a calendar event
+
+### Trivia Endpoints (via health proxy)
+
+- `GET /check/trivia-leaderboard` - (Public) Returns aggregated trivia wins per user: `{leaderboard: [{user_id, discord_id, display_name, avatar_url, wins, total_score, total_questions}]}`. Sorted by win count descending, then total score.
+- `POST /check/trivia-record-win` - (Authenticated) Records a completed trivia game. Body: `{score, total_questions, category?, _cf_token}`. Creates a `TriviaWin` row. Every completed game is recorded regardless of score.
+
+### Profile & Achievements Endpoint (via health proxy)
+
+- `GET /check/profile` - (Authenticated) Returns the user's full profile including trivia stats and all achievements with locked/unlocked status. Runs `check_achievements()` on each call to award any newly earned achievements. Response includes `achievements` array (all defined achievements with `unlocked` boolean), `trivia` stats object, and `new_achievements` array (IDs unlocked on this request).
+- `POST /check/easter-egg` - (Authenticated) Awards the "Secret Passage" easter egg achievement. Body: `{_cf_token}`. Returns `{ok, unlocked}` on first unlock, `{ok, already}` if already unlocked.
+
+### Custom Achievements Endpoints (via health proxy)
+
+- `GET /check/custom-achievements` - (Authenticated) List all admin-created custom achievements.
+- `POST /check/custom-achievements` - (Admin only) Create a custom achievement. Body: `{name, description, icon?, category?}`. Auto-generates `achievement_id` from name with `custom_` prefix.
+- `POST /check/custom-achievements-award` - (Admin only) Award a custom achievement to a user. Body: `{achievement_id, user_id, _cf_token}`.
+- `DELETE /check/custom-achievements-<id>` - (Admin only) Delete a custom achievement and remove all user unlocks for it.
 
 ### Jellyfin Auto-Login
 

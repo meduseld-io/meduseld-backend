@@ -31,7 +31,7 @@ Central navigation hub. All service cards check live status via a Cloudflare Wor
 - "Changelog" button → opens a modal with two tabs (Site and Backend). Fetches CHANGELOG.md from each GitHub repo (`raw.githubusercontent.com`) on first open, renders markdown to styled HTML. Shows spinner while loading, error message on failure.
 - Discord widget (Widgetbot Crate) → embedded chat bubble in bottom-right, links to server channel `1474674474036232204`
 - Speech bubble notification → appears after 3 seconds, fades after 8 seconds, says "Server suggestion or problem? Send a Discord message!"
-- Profile widget (top-right, inside header nav bar) → shows avatar, display name, and Admin badge for admins. Dropdown includes: username, role, "Admin Panel" link (admin only, links to `https://admin.meduseld.io`), and Logout
+- Profile widget (top-right, inside header nav bar) → shows avatar, display name, and Admin badge for admins. Dropdown includes: username, role, "Admin Panel" link (admin only, links to `https://admin.meduseld.io`), "My Profile" link (links to `https://profile.meduseld.io`), and Logout (redirects to `https://meduseld.io`)
 - Calendar widget (centered, between page title and news panel) → shows upcoming group events fetched from `health.meduseld.io/check/calendar` (proxied through health to bypass Cloudflare Access). Displays event title, date/time, and optional description. Each event has RSVP buttons (going/maybe/not going) with counts — clicking sets your status, clicking the same status again removes it, hovering shows names of users who selected that option. Admins see a "+" button to add events (opens modal with title, date/time, description fields), edit buttons (pencil icon, opens edit modal pre-filled with event data), and delete buttons on each event. Events auto-load on page load. Auth via `cf_token` query param (GET/DELETE) or `_cf_token` in JSON body (POST/PUT).
 - Copyright footer with quietarcade link and dynamic version badge (fetches latest release from GitHub API, links to release page)
 
@@ -66,11 +66,15 @@ Each active service card has a status indicator badge that shows Online/Offline/
    - Description: "Browse and listen to e-books and audiobooks from our collection."
    - No status badge (external app, not health-checked)
 
+5. **Trivia Game**
+   - "Play Trivia" button → links to `https://trivia.meduseld.io`
+   - Description: "Test your knowledge with trivia questions."
+   - No status badge (static page, not health-checked)
+
 ### Service Cards (Coming Soon — Disabled)
 
 - VPN Access — Mullvad remote access
 - Game Wiki — community wiki for current game
-- Trivia Game — trivia questions
 - D&D Companion — session hub, DM soundboard, and campaign wiki for Roll20 adventures
 - Remote Desktop — screen sharing/collaboration
 - Hall of Fame — funny moments and screenshots
@@ -87,14 +91,24 @@ Each active service card has a status indicator badge that shows Online/Offline/
 
 ### Games Up Next List
 
-- Ranked list of upcoming games with Steam store links
+- Dynamically rendered ranked list of upcoming games with Steam store links
+- Games stored in database (`game_list_entries` table) and fetched from `health.meduseld.io/check/games` API. Falls back to hardcoded default list if API is unreachable.
+- "Add Game" button (+) → opens modal for any authenticated user to add a game by Steam App ID, name, optional URL (auto-generated from App ID if omitted), and optional note/tooltip.
+- Admin delete buttons (x icon, red) on each game → confirms then DELETE to `health.meduseld.io/check/games-<app_id>`. Removes the game and all associated votes.
+- Games sorted by weighted vote score (Borda count) when votes exist, otherwise creation order
+- "Vote" button (thumbs-up icon) → enters vote mode where users can drag-and-drop to rank games by preference (#1 = most wanted). Shows instruction bar with Save/Cancel buttons. Requires authentication.
+- Vote mode initializes with user's existing rankings if they've voted before, otherwise uses current display order
+- "Save Votes" → PUT to `health.meduseld.io/check/game-votes` with `{rankings: {appId: rank}}`. Replaces all previous votes for that user. Each user gets one set of rankings (unique constraint per user+game).
+- Scoring: Borda count — rank 1 = 7 points, rank 2 = 6, ..., rank 7 = 1 point. Games sorted by total score descending, vote count as tiebreaker.
+- Vote count badges shown next to each game (thumbs-up icon + count). Hovering shows voter names and their rank for that game via Bootstrap tooltip.
+- Total voter count badge shown in card header.
+- Backend: `GameVote` model (`game_votes` table) with `user_id`, `game_app_id`, `rank`, `updated_at`. Unique constraint on `(user_id, game_app_id)`.
 - "Refresh prices" button → re-fetches prices from Steam API with `forceRefresh=true`
 - Prices fetched from `https://store.steampowered.com/api/appdetails` via allorigins proxy
 - Auto-detects user country via `https://ipapi.co/json/` for localized currency (USD/GBP/EUR)
 - 24-hour price cache in localStorage (`gamePricesCache`)
 - Shows sale badges with discount percentage when on sale
 - Retries up to 3 times per game with 2-second delay
-- Games listed: Raft, Dawn of Defiance (has info tooltip about dedicated server support), Soulmask, 7 Days to Die, LOTR: Return to Moria, Fellowship, VEIN
 
 ### Server Specifications
 
@@ -210,7 +224,7 @@ Authenticated Flask page for controlling the Icarus dedicated game server. Requi
 - "Backup" dropdown:
   - "Download Backup" → `GET /download-backup` (downloads file)
   - "Backup to Cloud" → `GET /backup-to-cloud` (triggers Google Drive upload)
-- Profile widget (top-right) → same shared `auth.js` `renderProfile()` widget used on all pages. Shows avatar, display name, Admin badge for admins. Dropdown includes: username, role, "Admin Panel" link (admin only), and Logout.
+- Profile widget (top-right) → same shared `auth.js` `renderProfile()` widget used on all pages. Shows avatar, display name, Admin badge for admins. Dropdown includes: username, role, "Admin Panel" link (admin only), "My Profile" link (links to `https://profile.meduseld.io`), and Logout (redirects to `https://meduseld.io`).
 
 ### Development Mode
 
@@ -307,7 +321,7 @@ After any action: polling increases to 1-second intervals for 30 seconds, then r
 
 ### Logo Easter Eggs
 
-- Top logo → links to YouTube video `7lwJOxN_gXc` (Rohan theme)
+- Top logo → links to YouTube video `7lwJOxN_gXc` (Rohan theme). Also silently fires `POST /check/easter-egg` to award the "Secret Passage" achievement on click.
 - Bottom logo → links to YouTube video `WtO3AHMBePY`
 
 ---
@@ -363,8 +377,9 @@ Static admin page for managing user roles and account status. Served by Cloudfla
 
 - Fetches from `GET https://panel.meduseld.io/api/admin/users` with credentials
 - "Refresh" button → re-fetches user list
-- Columns: User (avatar + display name), Discord ID, Role, Services, Last Login, Actions
+- Columns: User (avatar + display name), Discord ID, Role, Services, Trivia, Last Login, Actions
 - Services column shows a purple Jellyfin icon if the user has Jellyfin credentials (`has_jellyfin`), dash otherwise
+- Trivia column shows a gold badge with games played count and accuracy percentage. Hovering shows a Bootstrap tooltip with full stats: games played, total correct, total wrong, best single-game score, and accuracy %. Users with no trivia games show a dash.
 - Current user row shows a "You" badge
 - Inactive users shown at 50% opacity
 - Users sorted: admins first, then alphabetically by display name
@@ -395,6 +410,17 @@ Below the users table, an "Admin Tools" section displays service cards for admin
 2. **System Monitor**
    - Always shows "Online" badge (static page, always available)
    - "Open System Monitor" button → links to `https://system.meduseld.io`
+
+### Custom Achievements Section
+
+Below the Admin Tools, a "Custom Achievements" card allows admins to manage custom achievements.
+
+- "Create" button → opens modal with name, description, and Bootstrap icon class fields. Creates via `POST /check/custom-achievements`.
+- Lists all custom achievements with icon, name, and description
+- Each achievement has:
+  - "Award" button (gift icon) → opens modal with user dropdown to award the achievement to a specific user via `POST /check/custom-achievements-award`
+  - "Delete" button (trash icon) → confirms then deletes the achievement and removes all user unlocks via `DELETE /check/custom-achievements-<id>`
+- Toast notifications for create/award/delete success and errors
 
 ---
 
@@ -436,6 +462,111 @@ Public landing page for the Herugrim open-source project.
 - Dark radial gradient background
 - Footer with copyright year (auto-filled via JS), "meduseld.io" link to GitHub org (`https://github.com/meduseld-io`), and dynamic version badge (fetches latest release tag from herugrim GitHub repo, falls back to `v0.1.0-alpha` on error, links to releases page)
 - No authentication required
+
+---
+
+## trivia.meduseld.io — Trivia Game
+
+File: `meduseld-site/trivia/index.html`
+
+Interactive trivia game using the Open Trivia Database API. Any authenticated user can play; wins are recorded to the backend leaderboard.
+
+### Navigation
+
+- "Back to Services" button → navigates to `https://services.meduseld.io`
+- Profile widget (top-right, inside header nav bar)
+
+### Leaderboard (Podium)
+
+- Fetches aggregated win data from `GET https://health.meduseld.io/check/trivia-leaderboard`
+- Top 3 users displayed as podium cards with medal emojis (🥇🥈🥉), avatar, display name, win count, and total correct answers
+- Users ranked 4+ shown in a table below the podium
+- Refreshes automatically after each game completes
+
+### Game Setup Panel
+
+- Number of Questions: dropdown (5, 10, 15, 20 — default 10)
+- Difficulty: dropdown (Any, Easy, Medium, Hard — default Any)
+- Category: button grid loaded dynamically from `https://opentdb.com/api_category.php`. "Any Category" selected by default. Click to select one category.
+- "Start Game" button → fetches questions from `https://opentdb.com/api.php` with selected parameters, shows spinner while loading
+
+### Game Panel (visible during gameplay)
+
+- Header shows current question number, total questions, and running score badge
+- Category and difficulty badges per question
+- Question text with 4 multiple-choice answer buttons
+- Clicking an answer: disables all buttons, highlights correct answer green, wrong answer red. Advances to next question after 1.2 seconds.
+- Progress dots at bottom: gold = current, green = correct, red = wrong, gray = unanswered
+
+### Results Panel (visible after game ends)
+
+- Final score with percentage
+- Contextual message based on score (100% = "Perfect score!", 80%+ = "Great job!", etc.)
+- Progress dots showing all answers at a glance
+- "Win recorded to leaderboard" badge (shown if authenticated and save succeeds)
+- "Play Again" button → returns to setup panel
+
+### Win Recording
+
+- After each game, if user is authenticated, POSTs to `https://health.meduseld.io/check/trivia-record-win` with `{score, total_questions, category, _cf_token}`
+- Auth via `_cf_token` in JSON body (CF_Authorization cookie value)
+- Every completed game is recorded regardless of score
+
+---
+
+## profile.meduseld.io — User Profile & Achievements
+
+File: `meduseld-site/profile/index.html`
+
+User profile page showing personal stats and achievement progress. Any authenticated user can view their own profile.
+
+### Navigation
+
+- "Back to Services" button → navigates to `https://services.meduseld.io`
+- Profile widget (top-right, inside header nav bar)
+- Accessible from the "My Profile" link in the profile dropdown on all pages
+
+### Profile Header
+
+- User avatar (96px, gold border), display name with admin badge if applicable, @username, and "Member since" date
+- Data fetched from `GET https://health.meduseld.io/check/profile?cf_token=<token>`
+
+### Stats Row
+
+- Displayed only if the user has played trivia games
+- 5 stat cards: Games Played, Correct Answers, Wrong Answers, Best Score, Accuracy %
+
+### Achievements Grid
+
+- Shows all defined achievements as cards in a grid (unlocked first, then locked)
+- Unlocked achievements: gold icon, name, description, unlock date
+- Locked achievements: grayed out with reduced opacity
+- Newly unlocked achievements (awarded on this page load) show a green "NEW" badge
+- Achievement count badge: "X / Y unlocked"
+- Achievements are checked and awarded server-side each time the profile is loaded
+
+### Achievement Definitions
+
+| ID                    | Name             | Description                                  | Category |
+| --------------------- | ---------------- | -------------------------------------------- | -------- |
+| first_login           | First Steps      | Log in to Meduseld for the first time        | general  |
+| trivia_rookie         | Trivia Rookie    | Complete your first trivia game              | trivia   |
+| trivia_veteran        | Trivia Veteran   | Complete 10 trivia games                     | trivia   |
+| trivia_master         | Trivia Master    | Complete 50 trivia games                     | trivia   |
+| perfect_score         | Perfect Score    | Get 100% on a trivia game                    | trivia   |
+| trivia_streak_3       | On a Roll        | Get 3 perfect scores                         | trivia   |
+| trivia_hard_win       | Big Brain        | Score 80%+ on a 10+ question trivia game     | trivia   |
+| trivia_all_categories | Renaissance Mind | Play trivia in 10 different categories       | trivia   |
+| night_owl             | Night Owl        | Play a trivia game between midnight and 5 AM | trivia   |
+| media_explorer        | Media Explorer   | Access Edoras (Jellyfin) for the first time  | media    |
+| rsvp_king             | RSVP King        | RSVP to 5 different events                   | social   |
+| game_critic           | Game Critic      | Vote on the Games Up Next list               | general  |
+| server_starter        | Ignition         | Start the game server 5 times                | server   |
+| server_stopper        | Lights Out       | Stop the game server 10 times                | server   |
+| server_killer         | Chaos Agent      | Force kill the game server 5 times           | server   |
+| easter_egg            | Secret Passage   | Find the hidden link on the control panel    | secret   |
+
+Admins can also create custom achievements via the API and manually award them to users.
 
 ---
 

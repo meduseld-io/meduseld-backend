@@ -1,5 +1,8 @@
 from database import db
 from datetime import datetime, timezone
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class User(db.Model):
@@ -188,6 +191,45 @@ class GameListEntry(db.Model):
             "added_by_name": (
                 (self.creator.display_name or self.creator.username) if self.creator else None
             ),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class TriviaLobby(db.Model):
+    """A multiplayer trivia lobby where users can host and join games."""
+
+    __tablename__ = "trivia_lobbies"
+
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(8), unique=True, nullable=False, index=True)
+    host_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    status = db.Column(
+        db.String(16), nullable=False, default="waiting"
+    )  # waiting, playing, finished
+    num_questions = db.Column(db.Integer, nullable=False, default=10)
+    difficulty = db.Column(db.String(16), nullable=False, default="")  # empty = any
+    category = db.Column(db.String(8), nullable=False, default="")  # empty = any
+    category_name = db.Column(db.String(128), nullable=False, default="")
+    max_players = db.Column(db.Integer, nullable=False, default=8)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    started_at = db.Column(db.DateTime)
+    finished_at = db.Column(db.DateTime)
+
+    host = db.relationship("User", backref="hosted_lobbies")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "code": self.code,
+            "host_user_id": self.host_user_id,
+            "host_name": (self.host.display_name or self.host.username) if self.host else None,
+            "host_avatar": self.host.avatar_url if self.host else None,
+            "status": self.status,
+            "num_questions": self.num_questions,
+            "difficulty": self.difficulty,
+            "category": self.category,
+            "category_name": self.category_name,
+            "max_players": self.max_players,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -392,8 +434,8 @@ def get_all_achievements():
     try:
         for ca in CustomAchievement.query.all():
             all_achs[ca.achievement_id] = ca.to_definition()
-    except Exception:
-        pass  # Table may not exist yet
+    except Exception as e:
+        logger.error("Failed to load custom achievements: %s", e)
     return all_achs
 
 

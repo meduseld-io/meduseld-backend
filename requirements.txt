@@ -11,3 +11,6 @@ Flask-SQLAlchemy
 psycopg2-binary
 Flask-Migrate
 PyJWT
+flask-socketio>=5.3.0
+gevent>=23.9.0
+gevent-websocket>=0.10.1
