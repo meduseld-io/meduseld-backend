@@ -6,6 +6,7 @@ All game state is held in-memory (lobby_games dict) for speed; only final
 results are persisted to the database via TriviaWin.
 """
 
+import re
 import random
 import string
 import logging
@@ -125,9 +126,207 @@ QUESTION_TIME_SECONDS = 20  # seconds per question
 RESULTS_PAUSE_SECONDS = 5  # seconds to show answer before next question
 COUNTDOWN_SECONDS = 5  # countdown before game starts
 
+CUSTOM_CATEGORY_FLAGS = "flags"
+
+# Common country name aliases for fuzzy matching (lowercase -> canonical name)
+# Canonical names must match restcountries "common" name exactly
+COUNTRY_ALIASES = {
+    "usa": "United States",
+    "us": "United States",
+    "america": "United States",
+    "united states of america": "United States",
+    "uk": "United Kingdom",
+    "great britain": "United Kingdom",
+    "britain": "United Kingdom",
+    "england": "United Kingdom",
+    "russia": "Russia",
+    "south korea": "South Korea",
+    "north korea": "North Korea",
+    "czech republic": "Czechia",
+    "ivory coast": "Côte d'Ivoire",
+    "cote d'ivoire": "Côte d'Ivoire",
+    "cote divoire": "Côte d'Ivoire",
+    "east timor": "Timor-Leste",
+    "burma": "Myanmar",
+    "holland": "Netherlands",
+    "the netherlands": "Netherlands",
+    "vatican": "Vatican City",
+    "vatican city state": "Vatican City",
+    "holy see": "Vatican City",
+    "congo": "Republic of the Congo",
+    "republic of congo": "Republic of the Congo",
+    "republic of the congo": "Republic of the Congo",
+    "dr congo": "DR Congo",
+    "drc": "DR Congo",
+    "democratic republic of the congo": "DR Congo",
+    "democratic republic of congo": "DR Congo",
+    "swaziland": "Eswatini",
+    "cape verde": "Cape Verde",
+    "cabo verde": "Cape Verde",
+    "uae": "United Arab Emirates",
+    "emirates": "United Arab Emirates",
+    "macau": "Macau",
+    "macao": "Macau",
+    "hong kong sar": "Hong Kong",
+    "falklands": "Falkland Islands",
+    "falkland islands": "Falkland Islands",
+    "micronesia": "Micronesia",
+    "federated states of micronesia": "Micronesia",
+    "palestine": "Palestine",
+    "taiwan": "Taiwan",
+    "republic of china": "Taiwan",
+    "chinese taipei": "Taiwan",
+    "the gambia": "Gambia",
+    "the bahamas": "Bahamas",
+    "turks and caicos": "Turks and Caicos Islands",
+    "bvi": "British Virgin Islands",
+    "usvi": "United States Virgin Islands",
+    "us virgin islands": "United States Virgin Islands",
+    "st kitts": "Saint Kitts and Nevis",
+    "st lucia": "Saint Lucia",
+    "st vincent": "Saint Vincent and the Grenadines",
+    "st helena": "Saint Helena, Ascension and Tristan da Cunha",
+    "st martin": "Saint Martin",
+    "st barthelemy": "Saint Barthélemy",
+    "st barts": "Saint Barthélemy",
+    "st pierre": "Saint Pierre and Miquelon",
+    "curacao": "Curaçao",
+    "reunion": "Réunion",
+    "sint maarten": "Sint Maarten",
+    "cocos islands": "Cocos (Keeling) Islands",
+    "pitcairn": "Pitcairn Islands",
+    "svalbard": "Svalbard and Jan Mayen",
+    "heard island": "Heard Island and McDonald Islands",
+    "christmas island": "Christmas Island",
+    "norfolk island": "Norfolk Island",
+    "wallis and futuna": "Wallis and Futuna",
+    "new caledonia": "New Caledonia",
+    "french polynesia": "French Polynesia",
+    "french guiana": "French Guiana",
+    "martinique": "Martinique",
+    "guadeloupe": "Guadeloupe",
+    "mayotte": "Mayotte",
+    "bermuda": "Bermuda",
+    "cayman islands": "Cayman Islands",
+    "gibraltar": "Gibraltar",
+    "guernsey": "Guernsey",
+    "jersey": "Jersey",
+    "isle of man": "Isle of Man",
+    "aruba": "Aruba",
+    "greenland": "Greenland",
+    "faroe islands": "Faroe Islands",
+    "faroes": "Faroe Islands",
+    "cook islands": "Cook Islands",
+    "niue": "Niue",
+    "tokelau": "Tokelau",
+    "american samoa": "American Samoa",
+    "guam": "Guam",
+    "puerto rico": "Puerto Rico",
+    "northern mariana islands": "Northern Mariana Islands",
+}
+
+# Cache for REST Countries data (fetched once per process lifetime)
+_countries_cache = None
+_countries_cache_lock = threading.Lock()
+
+
+def _get_countries():
+    """Fetch and cache all countries from REST Countries API."""
+    global _countries_cache
+    if _countries_cache is not None:
+        return _countries_cache
+
+    with _countries_cache_lock:
+        if _countries_cache is not None:
+            return _countries_cache
+        try:
+            resp = requests.get(
+                "https://restcountries.com/v3.1/all?fields=name,flags,cca2",
+                timeout=15,
+            )
+            data = resp.json()
+            countries = []
+            for c in data:
+                common = c.get("name", {}).get("common", "")
+                flag_url = c.get("flags", {}).get("svg") or c.get("flags", {}).get("png", "")
+                if common and flag_url:
+                    countries.append({"name": common, "flag": flag_url, "cca2": c.get("cca2", "")})
+            _countries_cache = countries
+            logger.info("Cached %d countries from REST Countries API", len(countries))
+            return countries
+        except Exception as e:
+            logger.error("Failed to fetch countries from REST Countries API: %s", e)
+            return None
+
+
+def _normalize_answer(text):
+    """Normalize a country name for fuzzy comparison."""
+    text = text.strip().lower()
+    # Remove common prefixes/articles
+    for prefix in ["the ", "republic of ", "kingdom of ", "state of "]:
+        if text.startswith(prefix):
+            text = text[len(prefix) :]
+    # Remove accents and special chars for comparison
+    text = re.sub(r"[''`]", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _check_flag_answer(submitted, correct_name):
+    """Check if a submitted answer matches the correct country name (fuzzy)."""
+    sub = submitted.strip()
+    sub_lower = sub.lower()
+    correct_lower = correct_name.lower()
+
+    # Exact match (case-insensitive)
+    if sub_lower == correct_lower:
+        return True
+
+    # Check aliases
+    canonical = COUNTRY_ALIASES.get(sub_lower)
+    if canonical and canonical.lower() == correct_lower:
+        return True
+
+    # Normalized comparison (strips articles, accents, etc.)
+    if _normalize_answer(sub) == _normalize_answer(correct_name):
+        return True
+
+    return False
+
+
+def _fetch_flag_questions(settings):
+    """Generate flag identification questions from REST Countries API."""
+    countries = _get_countries()
+    if not countries:
+        return None
+
+    num = settings.get("num_questions", 10)
+    # Pick random countries (more than needed in case of issues)
+    pool = list(countries)
+    random.shuffle(pool)
+    selected = pool[: min(num, len(pool))]
+
+    questions = []
+    for c in selected:
+        questions.append(
+            {
+                "question": c["flag"],  # Flag image URL
+                "correct_answer": c["name"],
+                "incorrect_answers": [],  # Not used for text-input mode
+                "category": "Country Flags",
+                "difficulty": "mixed",
+                "type": "flags",
+            }
+        )
+    return questions
+
 
 def _fetch_questions(settings):
-    """Fetch questions from Open Trivia Database."""
+    """Fetch questions from Open Trivia Database or custom sources."""
+    # Custom category: Country Flags
+    if settings.get("category") == CUSTOM_CATEGORY_FLAGS:
+        return _fetch_flag_questions(settings)
+
     url = f"https://opentdb.com/api.php?amount={settings.get('num_questions', 10)}&type=multiple"
     if settings.get("category"):
         url += f"&category={settings['category']}"
@@ -147,6 +346,15 @@ def _fetch_questions(settings):
 
 def _prepare_question(q, index):
     """Prepare a question for sending to clients (shuffled answers, no correct answer revealed)."""
+    if q.get("type") == "flags":
+        return {
+            "index": index,
+            "question": q["question"],  # Flag image URL
+            "category": q["category"],
+            "difficulty": q["difficulty"],
+            "answers": [],  # Empty for text-input mode
+            "type": "flags",
+        }
     answers = q["incorrect_answers"][:] + [q["correct_answer"]]
     random.shuffle(answers)
     return {
@@ -218,6 +426,7 @@ def _reveal_and_advance(code):
 
     q = lobby.questions[lobby.current_question]
     correct = q["correct_answer"]
+    is_flag = q.get("type") == "flags"
 
     # Build per-player results for this question
     player_results = []
@@ -226,12 +435,13 @@ def _reveal_and_advance(code):
             continue
         if len(p["answers"]) > lobby.current_question:
             ans = p["answers"][lobby.current_question]
+            is_correct = _check_flag_answer(ans, correct) if is_flag else ans == correct
             player_results.append(
                 {
                     "user_id": uid,
                     "display_name": p["display_name"],
                     "answer": ans,
-                    "correct": ans == correct,
+                    "correct": is_correct,
                     "score": p["score"],
                 }
             )
@@ -724,7 +934,8 @@ def on_submit_answer(data):
 
     answer = data.get("answer", "")
     correct_answer = lobby.questions[qi]["correct_answer"]
-    is_correct = answer == correct_answer
+    is_flag = lobby.questions[qi].get("type") == "flags"
+    is_correct = _check_flag_answer(answer, correct_answer) if is_flag else answer == correct_answer
 
     if is_correct:
         # Bonus points for speed (if answered before deadline)
