@@ -63,6 +63,13 @@ Served via Cloudflare Pages at `/srv/meduseld-site`
   - Any authenticated user can spin once per week; admins can re-spin and manage the game pool
   - Data from `health.meduseld.io/check/picker-*` endpoints
 
+- **remote.meduseld.io** (remote/index.html)
+  - Peer-to-peer Remote Desktop using WebRTC for screen sharing and remote control
+  - Host shares screen via `getDisplayMedia()`, viewers connect via session code
+  - WebRTC signaling via Flask-SocketIO `/remote` namespace on `panel.meduseld.io`
+  - Sessions are ephemeral (in-memory, 30-minute idle timeout), no DB persistence
+  - Session list from `health.meduseld.io/check/remote-sessions`
+
 ### meduseld Repository (Flask Backend)
 
 Python Flask application at `/srv/meduseld`
@@ -456,6 +463,7 @@ After the first admin is set, subsequent admins can be promoted from the admin p
 - Database init: `app/database.py`
 - Models: `app/models.py`
 - Trivia multiplayer: `app/trivia_ws.py`
+- Remote desktop signaling: `app/remote_ws.py`
 - Game server: `/srv/games/icarus`
 
 ### Server Directory Structure
@@ -545,7 +553,7 @@ Three lightweight Python HTTP servers run independently of the Flask app so the 
    - Triggers `meduseld-backup.service` via systemd
    - Env: `BACKUP_SECRET`
 
-Flask proxy routing (`check_service()` in `webserver.py`): requests to `health.meduseld.io/check/stats` → `127.0.0.1:5004/stats`, `/check/history` → `127.0.0.1:5004/history`, `/check/backup` → `127.0.0.1:5003/backup`, `/check/backup-status` → `127.0.0.1:5003/status`, `/check/reboot` → `127.0.0.1:5002/reboot`, `/check/system-logs` → Flask's own `api_server_logs()`, `/check/media-auth` → Jellyfin SSO auth (authenticated, calls `_jellyfin_auth_inner()` to auto-provision and authenticate a Jellyfin account, returns `{token, user_id, server_id}`), `/check/seerr-auth` → Jellyseerr SSO auth (authenticated, provisions Jellyfin account then serves HTML page that POSTs credentials to Jellyseerr from the browser so `connect.sid` is set on the correct domain), `/check/team-roster` → admin users list with trivia stats (authenticated via CF_Authorization JWT passed as `cf_token` query param or `_cf_token` in body; each user includes a `trivia` object with `games_played`, `total_correct`, `total_wrong`, `total_questions`, `best_score`, `accuracy`), `/check/team-roster-<id>` → admin user update (PUT), `/check/calendar` → calendar events list (GET) and create (POST, admin only), `/check/calendar-<id>` → delete calendar event (DELETE, admin only) or edit calendar event (PUT with `title`/`event_date`, admin only) or RSVP (PUT with `status`, any authenticated user), `/check/game-votes` → game voting (GET returns aggregated scores + user's rankings, PUT submits user's ranked list), `/check/games` → games list (GET returns all games, POST adds a game — authenticated), `/check/games-<app_id>` → delete game (DELETE, admin only — also removes associated votes), `/check/trivia-lobbies` → list active multiplayer trivia lobbies (GET, public — returns lobbies with status `waiting`), `/check/trivia-leaderboard` → trivia leaderboard (GET, public — returns aggregated wins per user sorted by win count), `/check/trivia-record-win` → record a trivia game result (POST, authenticated — body: `{score, total_questions, category?, _cf_token}`), `/check/profile` → user profile with achievements and trivia stats (GET, authenticated — runs achievement checks and returns full profile data with all achievements and their locked/unlocked status), `/check/picker-current` → current week's game pick (GET, public), `/check/picker-spin` → spin the wheel to pick a game (POST, authenticated — admins can re-spin), `/check/picker-history` → past weekly picks (GET, public), `/check/picker-games` → game pool list (GET, public) and add game (POST, admin only), `/check/picker-games-<id>` → soft-delete game from pool (DELETE, admin only), `/check/fellowsync-rooms` → FellowSync active rooms (GET, public — proxies to `127.0.0.1:5050/api/rooms/active`, returns `{rooms, count}`, gracefully returns empty list if FellowSync is down). All authenticated endpoints use `_authenticate_from_cookie()` which reads the CF_Authorization JWT from cookie, header, `cf_token` query param, or `_cf_token` in JSON body.
+Flask proxy routing (`check_service()` in `webserver.py`): requests to `health.meduseld.io/check/stats` → `127.0.0.1:5004/stats`, `/check/history` → `127.0.0.1:5004/history`, `/check/backup` → `127.0.0.1:5003/backup`, `/check/backup-status` → `127.0.0.1:5003/status`, `/check/reboot` → `127.0.0.1:5002/reboot`, `/check/system-logs` → Flask's own `api_server_logs()`, `/check/media-auth` → Jellyfin SSO auth (authenticated, calls `_jellyfin_auth_inner()` to auto-provision and authenticate a Jellyfin account, returns `{token, user_id, server_id}`), `/check/seerr-auth` → Jellyseerr SSO auth (authenticated, provisions Jellyfin account then serves HTML page that POSTs credentials to Jellyseerr from the browser so `connect.sid` is set on the correct domain), `/check/team-roster` → admin users list with trivia stats (authenticated via CF_Authorization JWT passed as `cf_token` query param or `_cf_token` in body; each user includes a `trivia` object with `games_played`, `total_correct`, `total_wrong`, `total_questions`, `best_score`, `accuracy`), `/check/team-roster-<id>` → admin user update (PUT), `/check/calendar` → calendar events list (GET) and create (POST, admin only), `/check/calendar-<id>` → delete calendar event (DELETE, admin only) or edit calendar event (PUT with `title`/`event_date`, admin only) or RSVP (PUT with `status`, any authenticated user), `/check/game-votes` → game voting (GET returns aggregated scores + user's rankings, PUT submits user's ranked list), `/check/games` → games list (GET returns all games, POST adds a game — authenticated), `/check/games-<app_id>` → delete game (DELETE, admin only — also removes associated votes), `/check/trivia-lobbies` → list active multiplayer trivia lobbies (GET, public — returns lobbies with status `waiting`), `/check/trivia-leaderboard` → trivia leaderboard (GET, public — returns aggregated wins per user sorted by win count), `/check/trivia-record-win` → record a trivia game result (POST, authenticated — body: `{score, total_questions, category?, _cf_token}`), `/check/profile` → user profile with achievements and trivia stats (GET, authenticated — runs achievement checks and returns full profile data with all achievements and their locked/unlocked status), `/check/picker-current` → current week's game pick (GET, public), `/check/picker-spin` → spin the wheel to pick a game (POST, authenticated — admins can re-spin), `/check/picker-history` → past weekly picks (GET, public), `/check/picker-games` → game pool list (GET, public) and add game (POST, admin only), `/check/picker-games-<id>` → soft-delete game from pool (DELETE, admin only), `/check/fellowsync-rooms` → FellowSync active rooms (GET, public — proxies to `127.0.0.1:5050/api/rooms/active`, returns `{rooms, count}`, gracefully returns empty list if FellowSync is down), `/check/remote-sessions` → list active remote desktop sessions (GET, public — returns `{sessions}` from in-memory state, cleans up expired sessions on each call). All authenticated endpoints use `_authenticate_from_cookie()` which reads the CF_Authorization JWT from cookie, header, `cf_token` query param, or `_cf_token` in JSON body.
 
 ### Common Issues
 
@@ -669,6 +677,46 @@ Events (server → client):
 ### FellowSync Rooms Endpoint (via health proxy)
 
 - `GET /check/fellowsync-rooms` - (Public) Proxies to FellowSync backend at `127.0.0.1:5050/api/rooms/active`. Returns `{rooms: [{room_id, host_name, participant_count, current_track, current_artist, is_playing}], count}`. Returns `{rooms: [], count: 0}` if FellowSync is unreachable. Used by the services page active room banner.
+
+### Remote Desktop Endpoint (via health proxy)
+
+- `GET /check/remote-sessions` - (Public) Returns all active (non-expired) remote desktop sessions. Response: `{sessions: [{code, host_user_id, host_name, host_avatar, viewer_count, viewers}]}`. Cleans up expired sessions on each call.
+
+### Remote Desktop WebSocket (Flask-SocketIO)
+
+Namespace: `/remote` on `panel.meduseld.io`. All session state is held in-memory (`remote_ws.remote_sessions` dict); nothing is persisted to the database. Sessions auto-expire after 30 minutes of inactivity.
+
+Module: `app/remote_ws.py` — all signaling logic is isolated here. Event handlers are registered via `register_remote_ws(socketio)` called from `webserver.py`.
+
+Auth: Client passes `CF_Authorization` cookie value as `token` query parameter on connect. Server decodes the JWT (without signature verification) and looks up the user by `discord_user.id`. Unauthenticated connections are rejected.
+
+Events (client → server):
+
+- `create_session` — Create a new hosting session. Generates a 6-char code, stores in-memory. Host must already have a display stream (captured client-side before emitting).
+- `join_session` — Request to join a session. Data: `{code}`. Adds user to pending list; host must approve.
+- `approve_viewer` — Host-only. Data: `{code, user_id}`. Moves viewer from pending to connected, joins SocketIO room.
+- `deny_viewer` — Host-only. Data: `{code, user_id}`. Removes from pending, notifies viewer.
+- `toggle_control` — Host-only. Data: `{code, user_id}`. Toggles mouse+keyboard control permission for a viewer.
+- `signal` — Relay WebRTC signaling data. Data: `{code, target_user_id, signal}`. Signal contains SDP offers/answers or ICE candidates.
+- `input_event` — Relay mouse/keyboard input from viewer to host. Data: `{code, event}`. Only relayed if viewer has control granted.
+- `end_session` — Host-only. Data: `{code}`. Ends session, notifies all viewers.
+- `leave_session` — Viewer leaves. Data: `{code}`. Removes from viewers/pending.
+
+Events (server → client):
+
+- `welcome` — Sent on connect. Data: `{user_id}` (DB user ID).
+- `session_created` — Session created successfully. Data: `{session}`.
+- `viewer_request` — Sent to host when a viewer requests to join. Data: `{user_id, display_name, avatar_url}`.
+- `join_pending` — Sent to viewer after requesting to join. Data: `{code, message}`.
+- `join_approved` — Sent to viewer when host approves. Data: `{session}`.
+- `join_denied` — Sent to viewer when host denies. Data: `{reason}`.
+- `viewer_joined` / `viewer_left` — Broadcast to room. Data includes `{user_id, display_name, session}`.
+- `session_updated` — Broadcast when session state changes (e.g. control toggled). Data: `{session}`.
+- `session_ended` — Broadcast when session ends. Data: `{reason}`.
+- `sessions_list` — Broadcast to all `/remote` clients when the active sessions list changes. Data: `{sessions}`.
+- `signal` — Relayed signaling data. Data: `{from_user_id, signal}`.
+- `control_toggled` — Sent to viewer when control permission changes. Data: `{granted}`.
+- `input_event` — Relayed input from viewer to host. Data: `{from_user_id, event}`.
 
 ### Jellyfin Auto-Login
 

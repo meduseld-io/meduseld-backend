@@ -77,12 +77,16 @@ Each active service card has a status indicator badge that shows Online/Offline/
    - Description: "Spin the wheel to pick this week's party game."
    - No status badge (static page, not health-checked)
 
+7. **Remote Desktop**
+   - "Open Remote Desktop" button → links to `https://remote.meduseld.io`
+   - Description: "Share and control each other's screens for remote collaboration."
+   - No status badge (WebRTC peer-to-peer, not health-checked)
+
 ### Service Cards (Coming Soon — Disabled)
 
 - VPN Access — Mullvad remote access
 - Game Wiki — community wiki for current game
 - D&D Companion — session hub, DM soundboard, and campaign wiki for Roll20 adventures
-- Remote Desktop — screen sharing/collaboration
 - Hall of Fame — funny moments and screenshots
 - More Services — placeholder
 
@@ -481,7 +485,7 @@ Public landing page for the Herugrim open-source project.
 
 File: `meduseld-site/trivia/index.html`
 
-Multiplayer trivia game with lobby system using WebSocket (Flask-SocketIO). Users can host or join lobbies to play together in real-time, or play solo. Questions from Open Trivia Database API. All game results (solo and multiplayer) are recorded to the backend leaderboard.
+Multiplayer trivia game with lobby system using WebSocket (Flask-SocketIO). Users can host or join lobbies to play together in real-time, or play solo. Questions from Open Trivia Database API. Only multiplayer game results are recorded to the backend leaderboard; solo games are untracked and just for fun.
 
 ### Navigation
 
@@ -493,7 +497,7 @@ Multiplayer trivia game with lobby system using WebSocket (Flask-SocketIO). User
 - Fetches aggregated win data from `GET https://health.meduseld.io/check/trivia-leaderboard`
 - Top 3 users displayed as podium cards with medal emojis (🥇🥈🥉), avatar, display name, win count, and total correct answers
 - Users ranked 4+ shown in a table below the podium
-- Refreshes automatically after each game completes (solo or multiplayer)
+- Refreshes automatically after each multiplayer game completes
 
 ### Lobby Browser (default view)
 
@@ -506,9 +510,9 @@ Multiplayer trivia game with lobby system using WebSocket (Flask-SocketIO). User
 ### Create Lobby Form
 
 - Questions: dropdown (5, 10, 15, 20 — default 10)
-- Difficulty: dropdown (Any, Easy, Medium, Hard — default Any)
+- Difficulty: dropdown (Any, Easy, Medium, Hard — default Any). Disabled when Country Flags category is selected.
 - Max Players: dropdown (2–12, default 8)
-- Category: dropdown loaded dynamically from `https://opentdb.com/api_category.php`
+- Category: dropdown loaded dynamically from `https://opentdb.com/api_category.php`, plus a custom "🏳️ Country Flags" option at the top
 - "Create Lobby" button → connects WebSocket to `panel.meduseld.io/trivia` namespace, emits `create_lobby` event
 
 ### Lobby Waiting Room
@@ -530,15 +534,16 @@ Multiplayer trivia game with lobby system using WebSocket (Flask-SocketIO). User
 
 ### Multiplayer Gameplay
 
-- Host clicks "Start Game" → server fetches questions from Open Trivia DB, emits `game_starting` with countdown (5 seconds)
+- Host clicks "Start Game" → server fetches questions from Open Trivia DB (or REST Countries API for flags), emits `game_starting` with countdown (5 seconds)
 - Countdown displayed as large animated number
 - Each question delivered via `question` event with shuffled answers and 20-second time limit
 - Timer bar animates from full (gold) → yellow (50%) → red (25%) → empty
-- Answer buttons use `data-idx` attributes and click event listeners (avoids HTML entity escaping issues with inline onclick)
-- Clicking an answer: disables all buttons, highlights selection, emits `submit_answer` with the raw answer string
+- For standard questions: answer buttons use `data-idx` attributes and click event listeners (avoids HTML entity escaping issues with inline onclick). Clicking an answer: disables all buttons, highlights selection, emits `submit_answer` with the raw answer string.
+- For flag questions: displays flag image with a text input field. Player types country name and clicks submit (or presses Enter). Input is disabled after submission.
 - `player_answered` event updates player chips (green border = answered)
 - When all players answer (or timer expires), server emits `answer_reveal` with correct answer and per-player results
-- Correct answer highlighted green, wrong answers red. Score badge updates. Progress dots update.
+- Standard questions: correct answer highlighted green, wrong answers red. Flag questions: correct country name shown below the flag, input field colored green (correct) or red (wrong).
+- Score badge updates. Progress dots update.
 - 5-second pause between questions, then next question auto-advances
 - After final question, server emits `game_over` with standings sorted by score
 - Host sees an "End Game" button in the question header. Clicking it (with confirm dialog) ends the game early — shows standings but no stats are recorded to the leaderboard. Server emits `game_aborted` instead of `game_over`.
@@ -553,12 +558,24 @@ Multiplayer trivia game with lobby system using WebSocket (Flask-SocketIO). User
 
 ### Solo Mode
 
-- Same setup as the old trivia game: questions, difficulty, category dropdowns
-- Fetches questions client-side from `https://opentdb.com/api.php` (no WebSocket needed)
-- Gameplay: question with 4 answer buttons, progress dots, score badge. "Solo" badge shown in header.
-- Advances to next question after 1.2 seconds on answer
-- Results: score with percentage, contextual message, progress dots, "Win recorded to leaderboard" badge
-- Win recording: POSTs to `https://health.meduseld.io/check/trivia-record-win` with `{score, total_questions, category, _cf_token}`
+- Same setup as the old trivia game: questions, difficulty, category dropdowns (including Country Flags). Difficulty disabled when flags selected.
+- For standard categories: fetches questions client-side from `https://opentdb.com/api.php` (no WebSocket needed)
+- For Country Flags: fetches all countries from `https://restcountries.com/v3.1/all?fields=name,flags`, picks random subset, shows flag images with text input
+- Gameplay: question with 4 answer buttons (standard) or flag image with text input (flags), progress dots, score badge. "Solo" badge shown in header.
+- Standard questions advance after 1.2 seconds on answer. Flag questions advance after 2 seconds (to allow reading the correct answer).
+- Flag answer validation uses client-side fuzzy matching with common aliases (e.g., "USA" → "United States", "UK" → "United Kingdom") and normalized comparison (strips articles, accents)
+- Results: score with percentage, contextual message, progress dots
+- No backend tracking — solo games do not record wins, affect the leaderboard, or count toward achievements
+
+### Country Flags Category
+
+Custom trivia category available in both multiplayer and solo modes. Players see a country flag image and must type the country name into a text input field.
+
+- Data source: REST Countries API (`https://restcountries.com/v3.1/all`) — includes all countries and territories with flags
+- Server-side: countries cached per process lifetime in `trivia_ws.py`. Questions generated by randomly selecting countries from the pool.
+- Answer validation: case-insensitive fuzzy matching with common aliases (USA, UK, Holland, etc.) and normalized comparison (strips articles like "The", "Republic of", removes accents)
+- Question format: `type: "flags"` field distinguishes flag questions from standard multiple-choice. `question` field contains the flag SVG URL. `answers` array is empty (text input, not multiple choice).
+- No difficulty levels — difficulty dropdown is disabled when this category is selected
 
 ---
 
@@ -665,6 +682,76 @@ User profile page showing personal stats and achievement progress. Any authentic
 | easter_egg            | Secret Passage   | Find the hidden link on the control panel    | secret   |
 
 Admins can also create custom achievements via the API and manually award them to users.
+
+---
+
+## remote.meduseld.io — Remote Desktop (Peer-to-Peer Viewing & Control)
+
+File: `meduseld-site/remote/index.html`
+
+Peer-to-peer screen sharing page using WebRTC. Any authenticated user can host or join sessions. Video/input data flows directly between users via WebRTC; the server only handles signaling.
+
+### Navigation
+
+- "Back to Services" button → navigates to `https://services.meduseld.io`
+- Profile widget (top-right, inside header nav bar)
+
+### Connection Status
+
+- Status dot indicator: connected (green), connecting (yellow), disconnected (red)
+- Shown centered below the page title
+
+### Lobby View (default)
+
+Two action cards side by side:
+
+1. **Share My Desktop** — triggers `getDisplayMedia()` screen capture prompt, then emits `create_session` via WebSocket. On success, switches to Host View.
+2. **Join a Session** — text input for 6-character session code (auto-uppercased). Clicking "Join" or pressing Enter emits `join_session`. If host hasn't approved yet, switches to Pending View.
+
+Active Sessions list below:
+
+- Fetches from `GET https://health.meduseld.io/check/remote-sessions` and also receives real-time `sessions_list` broadcasts via WebSocket
+- Each session card shows host name, session code badge, and viewer count
+- Clicking a session card auto-fills the code and joins
+
+### Host View
+
+- Session code badge (clickable to copy, with Bootstrap tooltip "Click to copy")
+- Pending Requests section: shows viewer join requests with avatar, name, and Approve/Deny buttons
+- Connected Viewers section: viewer chips with avatar, name, optional "CONTROL" badge, and a toggle button (lock/unlock icon with Bootstrap tooltip) to grant/revoke mouse+keyboard control per viewer
+- "End Session" button → emits `end_session`, disconnects all viewers, returns to lobby
+- Info text: "Your screen is being shared. Viewers see what you selected in the browser prompt."
+- If the user stops screen sharing via the browser's native UI, the session ends automatically
+
+### Viewer View
+
+- Session code badge in header
+- Control status badge: "View Only" (gray) or "Control Enabled" (green) — updated via `control_toggled` event
+- Video element displaying the host's screen via WebRTC stream
+- "Leave" button → emits `leave_session`, returns to lobby
+- When control is granted: mouse movements, clicks, and keyboard events on the video element are captured and sent to the host via `input_event` WebSocket events (normalized coordinates for mouse)
+
+### Pending View
+
+- Spinner with "Waiting for host approval..." message
+- "Cancel" button → emits `leave_session`, returns to lobby
+- Switches to Viewer View on `join_approved`, or back to lobby on `join_denied`
+
+### WebSocket Connection
+
+- Connects to `panel.meduseld.io` on the `/remote` namespace via Socket.IO
+- Auth: passes `CF_Authorization` cookie value as `token` query parameter
+- Server authenticates by decoding the JWT and looking up the user by Discord ID
+- On connect, server emits `welcome` with `{user_id}` (DB user ID)
+- Transports: WebSocket with polling fallback
+
+### WebRTC
+
+- Uses Google STUN servers (`stun:stun.l.google.com:19302`, `stun:stun1.l.google.com:19302`) for NAT traversal
+- Host creates one `RTCPeerConnection` per viewer, adds local display stream tracks, sends SDP offer via signaling
+- Viewer creates one `RTCPeerConnection` to host, receives SDP offer, sends answer, displays remote stream in video element
+- ICE candidates exchanged via `signal` WebSocket events
+- If users are behind strict NATs/firewalls, a TURN relay server may be needed (not yet configured)
 
 ---
 
