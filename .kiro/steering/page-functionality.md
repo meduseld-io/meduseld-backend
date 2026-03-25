@@ -416,6 +416,10 @@ Below the users table, an "Admin Tools" section displays service cards for admin
    - Always shows "Online" badge (static page, always available)
    - "Open System Monitor" button → links to `https://system.meduseld.io`
 
+3. **Edoras Management**
+   - Always shows "Online" badge (static page, always available)
+   - "Open Edoras" button → links to `https://edoras.meduseld.io`
+
 ### Custom Achievements Section
 
 Below the Admin Tools, a "Custom Achievements" card allows admins to manage custom achievements.
@@ -450,6 +454,7 @@ Each card has an icon, title, description, and "Open" button that opens the serv
 4. **Prowlarr** → `https://prowlarr.meduseld.io` — Indexer management for Sonarr and Radarr
 5. **qBittorrent** → `https://qb.meduseld.io` — Download client management
 6. **Chaptarr** → `https://chaptarr.meduseld.io` — Book management and automation
+7. **Bazarr** → `https://bazarr.meduseld.io` — Subtitle management and automation
 
 ---
 
