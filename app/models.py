@@ -530,6 +530,7 @@ class FameEntry(db.Model):
     file_path = db.Column(db.String(512))  # for uploads
     url = db.Column(db.String(512))  # for external links
     vote_count = db.Column(db.Integer, nullable=False, default=0)
+    tag = db.Column(db.String(64))  # game tag, e.g. 'PEAK', 'R.E.P.O.', 'Icarus'
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     creator = db.relationship("User", backref="fame_entries")
@@ -549,6 +550,7 @@ class FameEntry(db.Model):
             "file_path": self.file_path,
             "url": self.url,
             "vote_count": self.vote_count,
+            "tag": self.tag,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 

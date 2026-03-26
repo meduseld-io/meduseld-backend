@@ -4533,8 +4533,8 @@ def check_service(service):
     if service == "fame" or service.startswith("fame-"):
 
         FAME_UPLOAD_DIR = "/srv/media/fame"
-        FAME_MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
-        FAME_MAX_VIDEO_SIZE = 50 * 1024 * 1024  # 50MB
+        FAME_MAX_IMAGE_SIZE = 250 * 1024 * 1024  # 250MB
+        FAME_MAX_VIDEO_SIZE = 250 * 1024 * 1024  # 250MB
         FAME_ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
         FAME_ALLOWED_VIDEO_TYPES = {"video/mp4", "video/webm"}
 
@@ -4565,10 +4565,13 @@ def check_service(service):
                 per_page = min(per_page, 50)
                 sort = request.args.get("sort", "votes")  # votes, newest, oldest
                 filter_type = request.args.get("type", "")  # image, video, or empty
+                filter_tag = request.args.get("tag", "").strip()
 
                 query = FameEntry.query
                 if filter_type in ("image", "video"):
                     query = query.filter_by(media_type=filter_type)
+                if filter_tag:
+                    query = query.filter(db.func.lower(FameEntry.tag) == filter_tag.lower())
 
                 if sort == "newest":
                     query = query.order_by(FameEntry.created_at.desc())
@@ -4621,6 +4624,7 @@ def check_service(service):
                 if request.content_type and "multipart/form-data" in request.content_type:
                     title = request.form.get("title", "").strip()
                     caption = request.form.get("caption", "").strip()
+                    tag = request.form.get("tag", "").strip() or None
                     file = request.files.get("file")
 
                     if not title:
@@ -4683,6 +4687,7 @@ def check_service(service):
                             media_type=media_type,
                             source_type="upload",
                             file_path=filepath,
+                            tag=tag,
                         )
                         db.session.add(entry)
                         db.session.commit()
@@ -4705,6 +4710,7 @@ def check_service(service):
                     title = data["title"].strip()
                     url = data["url"].strip()
                     caption = data.get("caption", "").strip()
+                    tag = data.get("tag", "").strip() or None
                     media_type = data.get("media_type", "video")
                     if media_type not in ("image", "video"):
                         media_type = "video"
@@ -4720,6 +4726,7 @@ def check_service(service):
                             media_type=media_type,
                             source_type="link",
                             url=url,
+                            tag=tag,
                         )
                         db.session.add(entry)
                         db.session.commit()
@@ -4733,6 +4740,22 @@ def check_service(service):
                         logger.error("Failed to create fame link entry: %s", e)
                         return _fame_cors(jsonify({"error": "Create failed"}), 500)
 
+            return _fame_cors(jsonify({"error": "Method not allowed"}), 405)
+
+        # GET /check/fame-tags — return all unique tags
+        if service == "fame-tags":
+            if request.method == "GET":
+                from models import FameEntry
+                from database import db
+
+                rows = (
+                    db.session.query(FameEntry.tag)
+                    .filter(FameEntry.tag.isnot(None), FameEntry.tag != "")
+                    .distinct()
+                    .all()
+                )
+                tags = sorted(set(r[0] for r in rows), key=str.lower)
+                return _fame_cors(jsonify({"tags": tags}), 200)
             return _fame_cors(jsonify({"error": "Method not allowed"}), 405)
 
         # DELETE /check/fame-<id> — delete entry (owner or admin)
