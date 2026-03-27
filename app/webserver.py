@@ -3319,12 +3319,18 @@ def check_service(service):
                         if data.get("title"):
                             event.title = data["title"]
                         if data.get("event_date"):
-                            event.event_date = datetime.strptime(
-                                data["event_date"][:19], "%Y-%m-%dT%H:%M:%S"
-                            )
+                            date_str = data["event_date"]
+                            # Strip trailing Z and parse as naive UTC datetime
+                            if date_str.endswith("Z"):
+                                date_str = date_str[:-1]
+                            # Handle milliseconds if present
+                            if "." in date_str:
+                                date_str = date_str.split(".")[0]
+                            event.event_date = datetime.strptime(date_str[:19], "%Y-%m-%dT%H:%M:%S")
                         if "description" in data:
                             event.description = data.get("description", "")
                         db.session.commit()
+                        db.session.refresh(event)
                         logger.info(
                             "Admin %s edited calendar event %d: %s",
                             user.username,

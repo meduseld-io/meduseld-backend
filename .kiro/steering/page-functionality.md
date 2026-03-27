@@ -728,14 +728,16 @@ Active Sessions list below:
 - "End Session" button → emits `end_session`, disconnects all viewers, returns to lobby
 - Info text: "Your screen is being shared. Viewers see what you selected in the browser prompt."
 - If the user stops screen sharing via the browser's native UI, the session ends automatically
+- Screen Preview card (collapsible): shows a muted preview of the host's own shared screen with a remote cursor overlay. The cursor is a gold arrow SVG that tracks the viewer's mouse position in real-time, with a label showing the viewer's display name. Cursor shows a scale-down animation on clicks. A toggle button (eye icon) in the card header collapses/expands the preview.
+- Input log bar (fixed bottom-center): briefly displays viewer actions when control is granted — click, double-click, right-click, scroll direction, and key presses with modifier combos (e.g. "Ctrl+C"). Auto-hides after 2 seconds.
 
 ### Viewer View
 
 - Session code badge in header
 - Control status badge: "View Only" (gray) or "Control Enabled" (green) — updated via `control_toggled` event
-- Video element displaying the host's screen via WebRTC stream
+- Video element displaying the host's screen via WebRTC stream (wrapped in a `video-wrapper` div for input capture)
 - "Leave" button → emits `leave_session`, returns to lobby
-- When control is granted: mouse movements, clicks, and keyboard events on the video element are captured and sent to the host via `input_event` WebSocket events (normalized coordinates for mouse)
+- When control is granted: mouse movements (throttled to ~60fps), clicks, double-clicks, right-clicks, scroll events, mousedown/mouseup (for drag), and keyboard events are captured on the video element and sent to the host via `input_event` WebSocket events. Mouse events use normalized coordinates (0-1 range). Keyboard events include modifier key state (ctrlKey, shiftKey, altKey, metaKey). Default browser actions are prevented on the video element when control is active.
 
 ### Pending View
 
