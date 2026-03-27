@@ -1025,6 +1025,27 @@ def launch_server():
                 except Exception as e:
                     logger.warning(f"Could not set execute permission on {LAUNCH_SCRIPT}: {e}")
 
+                # Kill any stale tmux session from a previous run
+                # This prevents "session already exists" errors when the server
+                # crashed or was stopped but the tmux session wasn't cleaned up
+                try:
+                    tmux_check = subprocess.run(
+                        ["tmux", "has-session", "-t", "icarus"],
+                        capture_output=True,
+                        timeout=5,
+                    )
+                    if tmux_check.returncode == 0:
+                        logger.warning(
+                            "Stale tmux session 'icarus' found — killing it before start"
+                        )
+                        subprocess.run(
+                            ["tmux", "kill-session", "-t", "icarus"],
+                            capture_output=True,
+                            timeout=5,
+                        )
+                except Exception as e:
+                    logger.warning(f"Could not check/kill stale tmux session: {e}")
+
                 # Use bash explicitly to run the script
                 logger.info(f"Launching server via script: {LAUNCH_SCRIPT}")
                 logger.info(

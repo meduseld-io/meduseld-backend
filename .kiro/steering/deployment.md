@@ -714,7 +714,7 @@ Events (server → client):
 
 ### FellowSync Rooms Endpoint (via health proxy)
 
-- `GET /check/fellowsync-rooms` - (Public) Proxies to FellowSync backend at `127.0.0.1:5050/api/rooms/active`. Returns `{rooms: [{room_id, host_name, participant_count, current_track, current_artist, is_playing}], count}`. Returns `{rooms: [], count: 0}` if FellowSync is unreachable. Used by the services page active room banner.
+- `GET /check/fellowsync-rooms` - (Public) Proxies to FellowSync backend at `127.0.0.1:5050/api/rooms/active`. Returns `{rooms: [{room_id, host_name, participant_count, current_track, current_artist, is_playing, group_id}], count}`. `group_id` is the host's BYOK sync group ID (may be null if the host has no group). Returns `{rooms: [], count: 0}` if FellowSync is unreachable. Used by the services page active room banner.
 
 ### Remote Desktop Endpoint (via health proxy)
 
