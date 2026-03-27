@@ -44,6 +44,8 @@ class LobbyState:
         self.current_question = -1
         self.question_timer = None
         self.question_deadline = None  # timestamp when current question expires
+        self.question_revealed = False  # guard against double reveal
+        self._cleanup_pending = False  # set True when game ends, cancelled by play_again
         self.lock = threading.Lock()
 
         # Add host as first player
@@ -375,6 +377,7 @@ def _advance_question(code):
 
     with lobby.lock:
         lobby.current_question += 1
+        lobby.question_revealed = False
 
         if lobby.current_question >= len(lobby.questions):
             _end_game(code)
@@ -425,6 +428,11 @@ def _reveal_and_advance(code):
     lobby = lobby_games.get(code)
     if not lobby or lobby.status != "playing":
         return
+
+    with lobby.lock:
+        if lobby.question_revealed:
+            return  # Already revealed for this question
+        lobby.question_revealed = True
 
     q = lobby.questions[lobby.current_question]
     correct = q["correct_answer"]
@@ -546,14 +554,23 @@ def _end_game(code):
 
     socketio.emit("game_over", {"standings": standings}, room=code, namespace="/trivia")
 
-    # Clean up in-memory state after a delay
+    # Schedule cleanup after a delay (cancelled if play_again is triggered)
+    lobby._cleanup_pending = True
     socketio.start_background_task(_cleanup_lobby, code)
 
 
 def _cleanup_lobby(code):
-    """Remove lobby from memory after a delay."""
+    """Remove lobby from memory after a delay (unless play_again cancelled it)."""
     socketio.sleep(120)  # Keep for 2 minutes so players can see results
-    lobby_games.pop(code, None)
+    lobby = lobby_games.get(code)
+    if lobby and getattr(lobby, "_cleanup_pending", False):
+        # Still pending cleanup — no play_again was triggered, so clean up
+        # Mark all players disconnected first
+        for uid, p in lobby.players.items():
+            p["connected"] = False
+            if p.get("sid"):
+                leave_room(code, sid=p["sid"], namespace="/trivia")
+        lobby_games.pop(code, None)
 
 
 def _abort_game(code):
@@ -595,6 +612,8 @@ def _abort_game(code):
     socketio.emit("game_aborted", {"standings": standings}, room=code, namespace="/trivia")
     logger.info("Game aborted in lobby %s by host", code)
 
+    # Schedule cleanup after a delay (cancelled if play_again is triggered)
+    lobby._cleanup_pending = True
     socketio.start_background_task(_cleanup_lobby, code)
 
 
@@ -1032,6 +1051,79 @@ def on_end_game(data):
         return
 
     _abort_game(code)
+
+
+@socketio.on("play_again", namespace="/trivia")
+def on_play_again(data):
+    user = request.environ.get("trivia_user")
+    if not user:
+        return
+
+    code = str(data.get("code", "")).upper().strip()
+    lobby = lobby_games.get(code)
+
+    if not lobby:
+        emit("error", {"message": "Lobby not found"})
+        return
+
+    if user.id != lobby.host_user_id:
+        emit("error", {"message": "Only the host can restart the lobby"})
+        return
+
+    if lobby.status != "results":
+        emit("error", {"message": "Game is not finished"})
+        return
+
+    # Cancel pending cleanup
+    lobby._cleanup_pending = False
+
+    # Reset lobby state for a new game
+    lobby.status = "waiting"
+    lobby.questions = []
+    lobby.current_question = -1
+    lobby.question_timer = None
+    lobby.question_deadline = None
+    lobby.question_revealed = False
+
+    # Reset player scores and answers, keep connected players
+    for uid, p in list(lobby.players.items()):
+        if p["connected"]:
+            p["score"] = 0
+            p["answers"] = []
+        else:
+            # Remove disconnected players
+            lobby.players.pop(uid, None)
+
+    # Update settings if host sent new ones
+    new_settings = data.get("settings")
+    if new_settings and isinstance(new_settings, dict):
+        if "num_questions" in new_settings:
+            lobby.settings["num_questions"] = min(max(int(new_settings["num_questions"]), 5), 20)
+        if "difficulty" in new_settings:
+            lobby.settings["difficulty"] = new_settings["difficulty"]
+        if "category" in new_settings:
+            lobby.settings["category"] = new_settings["category"]
+        if "category_name" in new_settings:
+            lobby.settings["category_name"] = new_settings["category_name"]
+        if "max_players" in new_settings:
+            lobby.settings["max_players"] = min(max(int(new_settings["max_players"]), 2), 12)
+
+    # Update DB lobby status back to waiting
+    try:
+        from models import TriviaLobby
+        from database import db
+
+        db_lobby = TriviaLobby.query.filter_by(code=code).first()
+        if db_lobby:
+            db_lobby.status = "waiting"
+            db_lobby.started_at = None
+            db_lobby.finished_at = None
+            db.session.commit()
+    except Exception as e:
+        logger.error("Failed to reset lobby %s in DB: %s", code, e)
+
+    socketio.emit("lobby_reset", {"lobby": lobby.to_dict()}, room=code, namespace="/trivia")
+    logger.info("Lobby %s reset for play again by %s", code, user.username)
 
 
 def register_trivia_rest(app):

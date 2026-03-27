@@ -547,8 +547,10 @@ Multiplayer trivia game with lobby system using WebSocket (Flask-SocketIO). User
 - For standard questions: answer buttons use `data-idx` attributes and click event listeners (avoids HTML entity escaping issues with inline onclick). Clicking an answer: disables all buttons, highlights selection, emits `submit_answer` with the raw answer string.
 - For flag questions: displays flag image with a text input field. Player types country name and clicks submit (or presses Enter). Input is disabled after submission.
 - `player_answered` event updates player chips (green border = answered)
+- Player chips show live scores next to display names during gameplay (visible once the game is in playing or results state)
 - When all players answer (or timer expires), server emits `answer_reveal` with correct answer and per-player results
 - Standard questions: correct answer highlighted green, wrong answers red. Flag questions: correct country name shown below the flag, input field colored green (correct) or red (wrong).
+- "Everyone's answers" section shown below the answer reveal: lists each player's guess with correct (green check), wrong (red X), or no answer (gray clock) icons, color-coded answer text, and a "You" badge for the current user
 - Score badge updates. Progress dots update.
 - 5-second pause between questions, then next question auto-advances
 - After final question, server emits `game_over` with standings sorted by score
