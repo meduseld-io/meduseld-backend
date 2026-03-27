@@ -3481,6 +3481,32 @@ def check_service(service):
                 except Exception as e:
                     logger.warning("seerr-auth: Could not look up Jellyfin username: %s", e)
 
+            # Verify credentials work against Jellyfin directly before sending to Jellyseerr
+            try:
+                auth_header = (
+                    'MediaBrowser Client="Meduseld", Device="Web", DeviceId="meduseld-seerr-'
+                    + str(user.id)
+                    + '", Version="1.0.0"'
+                )
+                jf_verify = requests.post(
+                    f"{config.JELLYFIN_INTERNAL_URL}/Users/AuthenticateByName",
+                    headers={"Content-Type": "application/json", "Authorization": auth_header},
+                    json={"Username": jf_username, "Pw": user.jellyfin_password},
+                    timeout=10,
+                )
+                if not jf_verify.ok:
+                    logger.error(
+                        "seerr-auth: Jellyfin credential verification failed for '%s': %d %s",
+                        jf_username,
+                        jf_verify.status_code,
+                        jf_verify.text[:200],
+                    )
+                    return _seerr_cors(jsonify({"error": "Jellyfin credentials invalid"}), 502)
+                logger.info("seerr-auth: Jellyfin credentials verified OK for '%s'", jf_username)
+            except Exception as e:
+                logger.error("seerr-auth: Jellyfin credential verification request failed: %s", e)
+                return _seerr_cors(jsonify({"error": "Could not verify Jellyfin credentials"}), 502)
+
             # Authenticate with Jellyseerr server-side to avoid CORS issues.
             # We POST the Jellyfin credentials to Jellyseerr's internal API,
             # extract the connect.sid session cookie from the response, set it
