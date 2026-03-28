@@ -4753,8 +4753,15 @@ def check_service(service):
                         ext = os.path.splitext(file.filename or "")[1] or (
                             ".jpg" if media_type == "image" else ".mp4"
                         )
+                        # Sanitize extension to prevent path injection
+                        allowed_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".webm"}
+                        ext = ext.lower()
+                        if ext not in allowed_exts:
+                            ext = ".jpg" if media_type == "image" else ".mp4"
                         filename = f"{_uuid.uuid4().hex}{ext}"
-                        filepath = os.path.join(FAME_UPLOAD_DIR, filename)
+                        filepath = os.path.normpath(os.path.join(FAME_UPLOAD_DIR, filename))
+                        if not filepath.startswith(FAME_UPLOAD_DIR):
+                            return _fame_cors(jsonify({"error": "Invalid filename"}), 400)
                         with open(filepath, "wb") as f:
                             f.write(file_data)
                     except Exception as e:
@@ -4992,7 +4999,10 @@ def serve_fame_media(filename):
     if not filename or "/" in filename or ".." in filename:
         abort(404)
 
-    filepath = os.path.join("/srv/media/fame", filename)
+    base_path = "/srv/media/fame"
+    filepath = os.path.normpath(os.path.join(base_path, filename))
+    if not filepath.startswith(base_path + os.sep):
+        abort(404)
     if not os.path.isfile(filepath):
         abort(404)
 
