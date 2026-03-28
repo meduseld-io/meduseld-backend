@@ -860,14 +860,13 @@ Session hub, DM soundboard, and campaign wiki for D&D sessions. Any authenticate
 - "← Back to Services" button → navigates to `https://services.meduseld.io`
 - Profile widget (top-right, inside header nav bar)
 
-### Session Links Panel
+### Roll20 Campaign Card
 
-- Displays admin-configured quick-launch links as a grid of clickable cards (e.g. Roll20, D&D Beyond, Discord voice channel)
-- Each link card shows icon, label, optional description, and opens URL in new tab. If an image URL is set, it displays as a cover image at the top of the card instead of the icon.
-- Admin sees "+" button to add links, edit (pencil) and delete (trash) buttons on each link
-- Links stored in DB (`dnd_links` table), ordered by `sort_order`
-- Add/Edit modal: label, URL, Bootstrap icon class, image URL (optional, overrides icon), description, sort order
-- Data from `GET https://health.meduseld.io/check/dnd-links`
+- Static banner card at the top of the page linking to the Roll20 campaign
+- Displays `banner.png` as a cover image with "Open Roll20 Campaign" label and "The Beginning" subtitle
+- Links to `https://app.roll20.net/campaigns/details/20842428/the-beginning` (opens in new tab)
+- Hover effect: slight lift with shadow
+- Not DB-driven — hardcoded in the page HTML
 
 ### Party Roster
 
