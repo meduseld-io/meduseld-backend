@@ -273,6 +273,10 @@ def main():
         log.error("No pages found")
         return 1
 
+    # Ensure Main Page is included (it's often missing from allpages)
+    if "Main Page" not in titles:
+        titles.insert(0, "Main Page")
+
     # Prepare temp directory
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
     pages_dir = TEMP_DIR / "pages"
@@ -311,12 +315,21 @@ def main():
         log.error("No pages fetched successfully")
         return 1
 
-    # Create index.html redirect
+    # Create index.html redirect — point to Main_Page.html if it exists,
+    # otherwise the first available page
     index_path = pages_dir / "index.html"
+    redirect_target = "Main_Page.html"
+    if not (pages_dir / redirect_target).exists():
+        # Find any HTML file to redirect to
+        for f in sorted(pages_dir.glob("*.html")):
+            if f.name != "index.html":
+                redirect_target = f.name
+                log.warning("Main_Page.html not found, redirecting to %s", redirect_target)
+                break
     index_path.write_text(
-        '<!DOCTYPE html>\n<html><head><meta http-equiv="refresh" content="0;url=Main_Page.html">'
-        "<title>Icarus Wiki</title></head><body>"
-        '<a href="Main_Page.html">Go to wiki</a></body></html>\n'
+        f'<!DOCTYPE html>\n<html><head><meta http-equiv="refresh" content="0;url={redirect_target}">'
+        f"<title>Icarus Wiki</title></head><body>"
+        f'<a href="{redirect_target}">Go to wiki</a></body></html>\n'
     )
 
     # Download images
