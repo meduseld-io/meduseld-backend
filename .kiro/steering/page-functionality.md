@@ -87,10 +87,16 @@ Each active service card has a status indicator badge that shows Online/Offline/
    - Description: "Funny moments, clips, and memorable screenshots from our adventures."
    - No status badge (static page, not health-checked)
 
+9. **Game Wiki**
+   - Status badge: checks wiki health via `health.meduseld.io/check/wiki-health` (proxied to wiki microservice on port 5005), shows Online (with page count) or Offline
+   - "Open [Game] Wiki" button → links to `https://wiki.meduseld.io` (disabled when offline)
+   - Title and description dynamically set from `CONFIG.gameName` (currently "Icarus Wiki")
+   - Description: "Community wiki with guides, tips, and information for [game]."
+   - Status check runs alongside the main health check polling (every 5 seconds) but hits the Flask health proxy directly instead of the Cloudflare Worker
+
 ### Service Cards (Coming Soon — Disabled)
 
 - VPN Access — Mullvad remote access
-- Game Wiki — community wiki for current game
 - D&D Companion — session hub, DM soundboard, and campaign wiki for Roll20 adventures
 - More Services — placeholder
 
@@ -852,6 +858,7 @@ Each card shows a spinner while checking, then displays Online (green check), De
 1. Control Panel — checks `panel.meduseld.io`
 2. SSH Terminal — checks `ssh.meduseld.io`
 3. Jellyfin Media — checks `jellyfin.meduseld.io`
+4. Game Wiki — checks `health.meduseld.io/check/wiki-health` (proxied to wiki microservice on port 5005). Shows page count and last sync date when online.
 
 ### Auto-Refresh
 

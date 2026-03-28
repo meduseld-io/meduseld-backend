@@ -77,6 +77,17 @@ Served via Cloudflare Pages at `/srv/meduseld-site`
   - File uploads stored at `/srv/media/fame/`, served via `/check/fame-media/<filename>`
   - Data from `health.meduseld.io/check/fame*` endpoints
 
+- **wiki.meduseld.io** (served by wiki microservice)
+  - Static mirror of the Icarus wiki from `icarus.wiki.gg`
+  - Served by standalone Python HTTP server on port 5005 from `/srv/wiki/icarus`
+  - Routed through Cloudflare Tunnel (not proxied through Flask)
+  - No authentication required
+  - systemd: `meduseld-wiki.service`
+  - Scrape script: `wiki/scrape_wiki.sh` (uses `wget --mirror`, strips tracking/edit UI, injects local mirror banner)
+  - Auto-sync: `meduseld-wiki-scrape.timer` runs weekly (Sunday 04:00 UTC)
+  - Health check: `GET /health` returns `{status, wiki_dir, pages, last_sync}`
+  - Env: `WIKI_DIR` (default `/srv/wiki/icarus`)
+
 ### meduseld Repository (Flask Backend)
 
 Python Flask application at `/srv/meduseld`
@@ -536,7 +547,9 @@ After the first admin is set, subsequent admins can be promoted from the admin p
 │   ├── menu
 │   └── static
 ├── Steam
-└── steamcmd
+├── steamcmd
+└── wiki
+    └── icarus
 ```
 
 ### How It Starts
@@ -599,7 +612,16 @@ Three lightweight Python HTTP servers run independently of the Flask app so the 
    - Triggers `meduseld-backup.service` via systemd
    - Env: `BACKUP_SECRET`
 
-Flask proxy routing (`check_service()` in `webserver.py`): requests to `health.meduseld.io/check/stats` → `127.0.0.1:5004/stats`, `/check/history` → `127.0.0.1:5004/history`, `/check/backup` → `127.0.0.1:5003/backup`, `/check/backup-status` → `127.0.0.1:5003/status`, `/check/reboot` → `127.0.0.1:5002/reboot`, `/check/system-logs` → Flask's own `api_server_logs()`, `/check/media-auth` → Jellyfin SSO auth (authenticated, calls `_jellyfin_auth_inner()` to auto-provision and authenticate a Jellyfin account, returns `{token, user_id, server_id}`), `/check/seerr-auth` → Jellyseerr SSO auth (authenticated, provisions Jellyfin account then serves HTML page that POSTs credentials to Jellyseerr from the browser so `connect.sid` is set on the correct domain), `/check/team-roster` → admin users list with trivia stats (authenticated via CF_Authorization JWT passed as `cf_token` query param or `_cf_token` in body; each user includes a `trivia` object with `games_played`, `total_correct`, `total_wrong`, `total_questions`, `best_score`, `accuracy`), `/check/team-roster-<id>` → admin user update (PUT), `/check/calendar` → calendar events list (GET) and create (POST, admin only), `/check/calendar-<id>` → delete calendar event (DELETE, admin only) or edit calendar event (PUT with `title`/`event_date`, admin only) or RSVP (PUT with `status`, any authenticated user), `/check/game-votes` → game voting (GET returns aggregated scores + user's rankings, PUT submits user's ranked list), `/check/games` → games list (GET returns all games, POST adds a game — authenticated), `/check/games-<app_id>` → delete game (DELETE, admin only — also removes associated votes), `/check/trivia-lobbies` → list active multiplayer trivia lobbies (GET, public — returns lobbies with status `waiting`), `/check/trivia-leaderboard` → trivia leaderboard (GET, public — returns aggregated wins per user, only counting games where `won=True`, sorted by win count), `/check/trivia-record-win` → record a trivia game result (POST, authenticated — body: `{score, total_questions, category?, _cf_token}`), `/check/profile` → user profile with achievements and trivia stats (GET, authenticated — runs achievement checks and returns full profile data with all achievements and their locked/unlocked status), `/check/picker-current` → current week's game pick (GET, public), `/check/picker-spin` → spin the wheel to pick a game (POST, authenticated — admins can re-spin), `/check/picker-history` → past weekly picks (GET, public), `/check/picker-games` → game pool list (GET, public) and add game (POST, admin only), `/check/picker-games-<id>` → soft-delete game from pool (DELETE, admin only), `/check/fellowsync-rooms` → FellowSync active rooms (GET, public — proxies to `127.0.0.1:5050/api/rooms/active`, returns `{rooms, count}`, gracefully returns empty list if FellowSync is down), `/check/remote-sessions` → list active remote desktop sessions (GET, public — returns `{sessions}` from in-memory state, cleans up expired sessions on each call), `/check/fame` → Hall of Fame entries (GET public with optional auth for vote status, POST authenticated — file upload or JSON link), `/check/fame-<id>` → delete fame entry (DELETE, owner or admin), `/check/fame-<id>-vote` → toggle vote on entry (POST, authenticated), `/check/fame-media/<filename>` → serve uploaded fame media files from `/srv/media/fame/` (GET, public, dedicated Flask route with 24h cache). All authenticated endpoints use `_authenticate_from_cookie()` which reads the CF_Authorization JWT from cookie, header, `cf_token` query param, `_cf_token` in JSON body, or `_cf_token` in form data.
+4. **Wiki Service** (`wiki/wiki_server.py`)
+   - Port: 5005
+   - systemd: `meduseld-wiki.service`
+   - Endpoints: `GET /health` (returns `{status, wiki_dir, pages, last_sync}`), `GET /*` (serves static wiki files)
+   - Serves static mirror of `icarus.wiki.gg` from `/srv/wiki/icarus`
+   - Scrape script: `wiki/scrape_wiki.sh` (wget mirror, strips tracking/edit UI, injects local mirror banner)
+   - Auto-sync: `meduseld-wiki-scrape.timer` runs weekly (Sunday 04:00 UTC, 30-min random delay)
+   - Env: `WIKI_DIR` (default `/srv/wiki/icarus`)
+
+Flask proxy routing (`check_service()` in `webserver.py`): requests to `health.meduseld.io/check/stats` → `127.0.0.1:5004/stats`, `/check/history` → `127.0.0.1:5004/history`, `/check/backup` → `127.0.0.1:5003/backup`, `/check/backup-status` → `127.0.0.1:5003/status`, `/check/reboot` → `127.0.0.1:5002/reboot`, `/check/wiki-health` → `127.0.0.1:5005/health`, `/check/system-logs` → Flask's own `api_server_logs()`, `/check/media-auth` → Jellyfin SSO auth (authenticated, calls `_jellyfin_auth_inner()` to auto-provision and authenticate a Jellyfin account, returns `{token, user_id, server_id}`), `/check/seerr-auth` → Jellyseerr SSO auth (authenticated, provisions Jellyfin account then serves HTML page that POSTs credentials to Jellyseerr from the browser so `connect.sid` is set on the correct domain), `/check/team-roster` → admin users list with trivia stats (authenticated via CF_Authorization JWT passed as `cf_token` query param or `_cf_token` in body; each user includes a `trivia` object with `games_played`, `total_correct`, `total_wrong`, `total_questions`, `best_score`, `accuracy`), `/check/team-roster-<id>` → admin user update (PUT), `/check/calendar` → calendar events list (GET) and create (POST, admin only), `/check/calendar-<id>` → delete calendar event (DELETE, admin only) or edit calendar event (PUT with `title`/`event_date`, admin only) or RSVP (PUT with `status`, any authenticated user), `/check/game-votes` → game voting (GET returns aggregated scores + user's rankings, PUT submits user's ranked list), `/check/games` → games list (GET returns all games, POST adds a game — authenticated), `/check/games-<app_id>` → delete game (DELETE, admin only — also removes associated votes), `/check/trivia-lobbies` → list active multiplayer trivia lobbies (GET, public — returns lobbies with status `waiting`), `/check/trivia-leaderboard` → trivia leaderboard (GET, public — returns aggregated wins per user, only counting games where `won=True`, sorted by win count), `/check/trivia-record-win` → record a trivia game result (POST, authenticated — body: `{score, total_questions, category?, _cf_token}`), `/check/profile` → user profile with achievements and trivia stats (GET, authenticated — runs achievement checks and returns full profile data with all achievements and their locked/unlocked status), `/check/picker-current` → current week's game pick (GET, public), `/check/picker-spin` → spin the wheel to pick a game (POST, authenticated — admins can re-spin), `/check/picker-history` → past weekly picks (GET, public), `/check/picker-games` → game pool list (GET, public) and add game (POST, admin only), `/check/picker-games-<id>` → soft-delete game from pool (DELETE, admin only), `/check/fellowsync-rooms` → FellowSync active rooms (GET, public — proxies to `127.0.0.1:5050/api/rooms/active`, returns `{rooms, count}`, gracefully returns empty list if FellowSync is down), `/check/remote-sessions` → list active remote desktop sessions (GET, public — returns `{sessions}` from in-memory state, cleans up expired sessions on each call), `/check/fame` → Hall of Fame entries (GET public with optional auth for vote status, POST authenticated — file upload or JSON link), `/check/fame-<id>` → delete fame entry (DELETE, owner or admin), `/check/fame-<id>-vote` → toggle vote on entry (POST, authenticated), `/check/fame-media/<filename>` → serve uploaded fame media files from `/srv/media/fame/` (GET, public, dedicated Flask route with 24h cache). All authenticated endpoints use `_authenticate_from_cookie()` which reads the CF_Authorization JWT from cookie, header, `cf_token` query param, `_cf_token` in JSON body, or `_cf_token` in form data.
 
 ### Common Issues
 
@@ -726,6 +748,10 @@ Events (server → client):
 ### FellowSync Rooms Endpoint (via health proxy)
 
 - `GET /check/fellowsync-rooms` - (Public) Proxies to FellowSync backend at `127.0.0.1:5050/api/rooms/active`. Returns `{rooms: [{room_id, host_name, participant_count, current_track, current_artist, is_playing, group_id}], count}`. `group_id` is the host's BYOK sync group ID (may be null if the host has no group). Returns `{rooms: [], count: 0}` if FellowSync is unreachable. Used by the services page active room banner.
+
+### Wiki Health Endpoint (via health proxy)
+
+- `GET /check/wiki-health` - (Public) Proxies to wiki microservice at `127.0.0.1:5005/health`. Returns `{status: "ok", wiki_dir, pages, last_sync}`. Used by the services page wiki card and health dashboard to show Online/Offline status with page count.
 
 ### Remote Desktop Endpoint (via health proxy)
 
