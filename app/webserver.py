@@ -5236,34 +5236,6 @@ def check_service(service):
 
             return _dnd_cors(jsonify({"error": "Method not allowed"}), 405)
 
-        if service.startswith("dnd-sounds-file/"):
-            # Serve sound files
-            filename = service.split("dnd-sounds-file/", 1)[1]
-            if not filename:
-                return _dnd_cors(jsonify({"error": "No filename"}), 400)
-            from werkzeug.utils import secure_filename as _secure_filename
-
-            safe = _secure_filename(filename)
-            if not safe:
-                return _dnd_cors(jsonify({"error": "Invalid filename"}), 400)
-            filepath = os.path.join("/srv/media/dnd/sounds", safe)
-            if not os.path.isfile(filepath):
-                return _dnd_cors(jsonify({"error": "Not found"}), 404)
-            import mimetypes
-
-            mime = mimetypes.guess_type(filepath)[0] or "audio/mpeg"
-            try:
-                with open(filepath, "rb") as fh:
-                    data = fh.read()
-                resp = make_response(data)
-                resp.headers["Content-Type"] = mime
-                resp.headers["Cache-Control"] = "public, max-age=86400"
-                resp.headers["Access-Control-Allow-Origin"] = "*"
-                return resp
-            except Exception as e:
-                logger.error("Failed to serve D&D sound %s: %s", filename, e)
-                return _dnd_cors(jsonify({"error": "Read failed"}), 500)
-
         if service.startswith("dnd-sounds-"):
             # DELETE /check/dnd-sounds-<id>
             try:
@@ -5497,6 +5469,7 @@ def check_service(service):
         if service == "dnd-search":
             if request.method == "GET":
                 from models import DndSession as DndSessionModel, DndWikiPage
+                from database import db
 
                 q = request.args.get("q", "").strip()
                 if not q:
@@ -5608,6 +5581,46 @@ def serve_fame_media(filename):
         return resp
     except Exception as e:
         logger.error("Failed to serve fame media %s: %s", filename, e)
+        return abort(500)
+
+
+# ================= D&D SOUND FILES =================
+
+
+@app.route("/check/dnd-sound-file/<filename>", methods=["GET", "OPTIONS"])
+def serve_dnd_sound(filename):
+    """Serve uploaded D&D sound files from /srv/media/dnd/sounds/"""
+    host = request.host.split(":")[0]
+    if host != "health.meduseld.io":
+        abort(404)
+
+    if not filename:
+        abort(404)
+
+    from werkzeug.utils import secure_filename as _secure_filename
+
+    safe_name = _secure_filename(filename)
+    if not safe_name:
+        abort(404)
+
+    base_path = "/srv/media/dnd/sounds"
+    filepath = os.path.join(base_path, safe_name)
+    if not os.path.isfile(filepath):
+        abort(404)
+
+    import mimetypes
+
+    mime = mimetypes.guess_type(filepath)[0] or "audio/mpeg"
+    try:
+        with open(filepath, "rb") as f:
+            data = f.read()
+        resp = make_response(data)
+        resp.headers["Content-Type"] = mime
+        resp.headers["Cache-Control"] = "public, max-age=86400"
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        return resp
+    except Exception as e:
+        logger.error("Failed to serve D&D sound %s: %s", filename, e)
         return abort(500)
 
 

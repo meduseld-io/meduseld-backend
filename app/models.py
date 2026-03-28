@@ -1,6 +1,7 @@
 from database import db
 from datetime import datetime, timezone
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -569,3 +570,156 @@ class FameVote(db.Model):
 
     user = db.relationship("User", backref="fame_votes")
     entry = db.relationship("FameEntry", backref="votes")
+
+
+# ================= D&D COMPANION MODELS =================
+
+
+class DndLink(db.Model):
+    __tablename__ = "dnd_links"
+
+    id = db.Column(db.Integer, primary_key=True)
+    label = db.Column(db.String(128), nullable=False)
+    url = db.Column(db.String(512), nullable=False)
+    icon = db.Column(db.String(64), default="bi-link-45deg")
+    description = db.Column(db.String(256))
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    creator = db.relationship("User", backref="dnd_links")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "label": self.label,
+            "url": self.url,
+            "icon": self.icon,
+            "description": self.description,
+            "sort_order": self.sort_order,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class DndCharacter(db.Model):
+    __tablename__ = "dnd_characters"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    character_name = db.Column(db.String(128), nullable=False)
+    race = db.Column(db.String(64))
+    class_name = db.Column(db.String(64))
+    level = db.Column(db.Integer, default=1)
+    beyond_url = db.Column(db.String(512))
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (db.UniqueConstraint("user_id", name="uq_dnd_character_user"),)
+
+    owner = db.relationship("User", backref="dnd_character")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "display_name": (
+                (self.owner.display_name or self.owner.username) if self.owner else None
+            ),
+            "avatar_url": self.owner.avatar_url if self.owner else None,
+            "character_name": self.character_name,
+            "race": self.race,
+            "class_name": self.class_name,
+            "level": self.level,
+            "beyond_url": self.beyond_url,
+        }
+
+
+class DndSound(db.Model):
+    __tablename__ = "dnd_sounds"
+
+    id = db.Column(db.Integer, primary_key=True)
+    label = db.Column(db.String(128), nullable=False)
+    icon = db.Column(db.String(64), default="bi-music-note-beamed")
+    file_path = db.Column(db.String(512), nullable=False)
+    sound_type = db.Column(db.String(16), nullable=False, default="sfx")  # 'ambient' or 'sfx'
+    uploaded_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    uploader = db.relationship("User", backref="dnd_sounds")
+
+    def to_dict(self):
+        filename = os.path.basename(self.file_path) if self.file_path else None
+        return {
+            "id": self.id,
+            "label": self.label,
+            "icon": self.icon,
+            "sound_type": self.sound_type,
+            "audio_url": (
+                f"https://health.meduseld.io/check/dnd-sound-file/{filename}" if filename else None
+            ),
+            "uploaded_by": self.uploaded_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class DndSession(db.Model):
+    __tablename__ = "dnd_sessions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(256), nullable=False)
+    session_date = db.Column(db.Date, nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    tags = db.Column(db.String(512))  # comma-separated
+    created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    author = db.relationship("User", backref="dnd_sessions")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "session_date": self.session_date.isoformat() if self.session_date else None,
+            "body": self.body,
+            "tags": self.tags,
+            "created_by": self.created_by,
+            "author_name": (
+                (self.author.display_name or self.author.username) if self.author else None
+            ),
+            "author_avatar": self.author.avatar_url if self.author else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class DndWikiPage(db.Model):
+    __tablename__ = "dnd_wiki_pages"
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(256), nullable=False)
+    category = db.Column(db.String(64), default="general")  # npcs, locations, items, factions, etc
+    body = db.Column(db.Text, nullable=False)
+    image_url = db.Column(db.String(512))
+    created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    author = db.relationship("User", backref="dnd_wiki_pages")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "category": self.category,
+            "body": self.body,
+            "image_url": self.image_url,
+            "created_by": self.created_by,
+            "author_name": (
+                (self.author.display_name or self.author.username) if self.author else None
+            ),
+            "author_avatar": self.author.avatar_url if self.author else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
