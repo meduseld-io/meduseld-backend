@@ -265,7 +265,7 @@ def is_dev_mode():
     """Check if current request is in development mode"""
     try:
         return IS_DEV or (request and request.args.get("env") == "development")
-    except:
+    except Exception:
         return IS_DEV
 
 
