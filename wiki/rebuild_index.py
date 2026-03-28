@@ -50,9 +50,6 @@ h1 {{ color: #e6c65c; }}
 </nav>
 <div class="content">
 <h1>Icarus Wiki</h1>
-<div class="featured">
-  <a href="Main_Page.html">\U0001f3e0 Open Main Page</a>
-</div>
 <input type="text" class="search-box" placeholder="Search pages..." id="search" autocomplete="off">
 <div class="page-count" id="count">{len(page_files)} pages</div>
 <ul class="wiki-list" id="pages">
