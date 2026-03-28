@@ -275,9 +275,8 @@ def _get_countries():
             for c in data:
                 common = c.get("name", {}).get("common", "")
                 cca2 = c.get("cca2", "")
-                flag_url = c.get("flags", {}).get("svg") or c.get("flags", {}).get("png", "")
                 if common and cca2:
-                    countries.append({"name": common, "flag": flag_url, "cca2": cca2})
+                    countries.append({"name": common, "cca2": cca2})
             _countries_cache = countries
             logger.info("Cached %d countries from REST Countries API", len(countries))
             return countries
@@ -583,9 +582,7 @@ def _start_sudden_death(code, tied_player_ids):
     lobby.sudden_death_round = 0
 
     tied_names = [
-        lobby.players[uid]["display_name"]
-        for uid in tied_player_ids
-        if uid in lobby.players
+        lobby.players[uid]["display_name"] for uid in tied_player_ids if uid in lobby.players
     ]
     logger.info(
         "Sudden death in lobby %s between %s (score: %d)",
