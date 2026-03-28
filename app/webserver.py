@@ -1943,10 +1943,10 @@ def terminal_proxy():
 
     try:
         resp = req.get("http://localhost:7681", stream=True, timeout=5)
-        return resp.content, resp.status_code, resp.headers.items()
+        return resp.content, resp.status_code, dict(resp.headers)
     except Exception as e:
         logger.error(f"Error proxying to ttyd: {e}")
-        return f"Terminal unavailable: {e}", 503
+        return "Terminal unavailable", 503, {}
 
 
 @app.route("/start", methods=["POST"])
