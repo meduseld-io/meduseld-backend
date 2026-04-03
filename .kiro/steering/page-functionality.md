@@ -992,13 +992,17 @@ Standalone PWA with two modes: To-Do (default) and Shopping. Fully client-side w
 - Default mode is To-Do
 - Mode persisted in `lembas_mode` localStorage key
 - Each mode has its own separate data (to-do tasks vs shopping items)
-- Shopping mode shows the Shopping List / Regulars tab bar; To-Do mode has no tabs
+- Both modes share the same Regulars tab and regulars list
+- Tab bar shown in both modes: "Tasks / Regulars" in To-Do mode, "Shopping List / Regulars" in Shopping mode
+- Switching modes resets to the list tab
 
 ### To-Do Mode (default)
 
 - Simple task list with add input and "Add" button
+- Autocomplete suggestions from saved regulars appear as you type
 - Tasks header shows pending count
 - Tap checkbox to toggle done/undone - completed tasks move to a "Completed" section at the bottom
+- Star button on each task to save as a regular
 - Drag-to-reorder via long press (300ms, same as shopping mode, uses `@dnd-kit`)
 - During drag, a red delete drop zone appears at the bottom
 - "Clear" button in the completed section header removes all completed tasks
@@ -1027,11 +1031,12 @@ Standalone PWA with two modes: To-Do (default) and Shopping. Fully client-side w
 - Delete a shop with the trash icon on the card
 - Shops persisted in `lembas_shops` localStorage key
 
-### Regulars Tab (Shopping mode)
+### Regulars Tab (both modes)
 
-- Grid of starred items sorted alphabetically
+- Grid of starred items sorted alphabetically, shared across both modes
 - Tap to add back to current list (highlighted green when already in list)
 - X button to remove from regulars
+- Info text adapts to current mode ("task list" vs "shopping list")
 
 ### Help Modal
 
