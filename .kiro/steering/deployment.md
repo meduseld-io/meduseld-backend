@@ -86,15 +86,15 @@ Served via Cloudflare Pages at `/srv/meduseld-site`
   - Sound files stored at `/srv/media/dnd/sounds/`, served via `/check/dnd-sound-file/<filename>`
   - Data from `health.meduseld.io/check/dnd-*` endpoints
 
-- **lembas.meduseld.io** (lembas/index.html - built from `lembas` repo)
+- **lembas.meduseld.io** (standalone Cloudflare Pages project from `lembas` repo)
   - Shopping list and to-do PWA, fully client-side with localStorage
   - Two modes: To-Do (default) and Shopping, switchable via header icons
   - No authentication required, no backend
   - React 19 + Vite 6 frontend, source in separate `lembas` workspace folder
-  - Built output (`lembas/frontend/dist/`) is copied into `meduseld-site/lembas/` and served via Cloudflare Pages (not via Cloudflare Tunnel or the Ubuntu server)
+  - Deployed as its own Cloudflare Pages project directly from the `lembas` repo, with custom domain `lembas.meduseld.io` (not served from meduseld-site or the Ubuntu server)
   - Features: long-press to drag reorder, drag-to-delete zone, tap-to-edit with price/aisle fields (shopping), simple checklist with clear completed (to-do)
   - PWA with service worker for offline support
-  - Deployment: build in `lembas/frontend/` with `npm run build`, then copy `dist/*` into `meduseld-site/lembas/` and push meduseld-site
+  - The `meduseld-site/lembas/` folder contains a legacy vanilla JS version (not the current React app)
   - Repo: `git@github.com:meduseld-io/lembas.git` (separate `lembas` workspace folder)
 
 - **wiki.meduseld.io** (served by wiki microservice)
